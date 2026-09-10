@@ -18,7 +18,7 @@ import {
   Storage3DTexture,
   TempNode,
   type NodeBuilder,
-  type TextureNode
+  type Texture3DNode
 } from 'three/webgpu'
 
 import { outputTexture3D, type Node } from '@takram/three-geospatial/webgpu'
@@ -30,7 +30,10 @@ export abstract class ProceduralTexture3DNode extends TempNode {
 
   readonly texture = this.createStorage3DTexture()
 
-  private readonly textureNode: TextureNode
+  /** When true, the next setup() dispatches a one-shot compute fill. */
+  needsCompute = true
+
+  private readonly textureNode: Texture3DNode
 
   constructor(size = new Vector3(1)) {
     super(null)
@@ -55,12 +58,19 @@ export abstract class ProceduralTexture3DNode extends TempNode {
     return texture
   }
 
-  getTextureNode(): TextureNode {
+  getTextureNode(): Texture3DNode {
     return this.textureNode
   }
 
   setSize(width: number, height: number, depth: number): this {
-    this.texture.setSize(width, height, depth)
+    if (
+      this.texture.width !== width ||
+      this.texture.height !== height ||
+      this.texture.depth !== depth
+    ) {
+      this.texture.setSize(width, height, depth)
+      this.needsCompute = true
+    }
     return this
   }
 
@@ -72,26 +82,35 @@ export abstract class ProceduralTexture3DNode extends TempNode {
   override setup(builder: NodeBuilder): unknown {
     const { width, height, depth } = this.texture
 
-    const computeNode = Fn(() => {
-      const id = instanceIndex
-      const x = id.mod(width)
-      const y = id.div(width).mod(height)
-      const z = id.div(width * height)
-      const size = uvec3(width, height, depth)
-      If(uvec3(x, y, z).greaterThanEqual(size).any(), () => {
-        Return()
-      })
-      const textureCoordinate = vec3(x, y, z)
-      const uvw = textureCoordinate.add(0.5).div(vec3(width, height, depth))
+    // Match WebGL Procedural3DTextureBase.needsRender: fill once unless dirtied.
+    // Rebuild the compute graph each setup so NodeBuilder stays current; only
+    // the GPU dispatch is gated.
+    if (this.needsCompute) {
+      this.needsCompute = false
 
-      textureStore(
-        this.texture,
-        textureCoordinate,
-        this.setupOutputNode(uvw, builder)
-      )
-    })().compute(width * height * depth, [4, 4, 4])
+      const computeNode = Fn(() => {
+        const id = instanceIndex
+        const x = id.mod(width)
+        const y = id.div(width).mod(height)
+        const z = id.div(width * height)
+        const size = uvec3(width, height, depth)
+        If(uvec3(x, y, z).greaterThanEqual(size).any(), () => {
+          Return()
+        })
+        const textureCoordinate = vec3(x, y, z)
+        // Texel centers, matching WebGL Procedural3DTextureBase layer UVW:
+        // point = vec3(vUv.xy, (layer + 0.5) / size).
+        const uvw = textureCoordinate.add(0.5).div(vec3(width, height, depth))
 
-    void builder.renderer.compute(computeNode)
+        textureStore(
+          this.texture,
+          textureCoordinate,
+          this.setupOutputNode(uvw, builder)
+        )
+      })().compute(width * height * depth, [4, 4, 4])
+
+      void builder.renderer.compute(computeNode)
+    }
 
     return super.setup(builder)
   }

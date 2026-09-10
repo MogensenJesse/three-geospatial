@@ -38,6 +38,8 @@ export class AerialPerspectiveNode extends TempNode {
   normalNode?: Node<'vec3'> | null
   skyNode?: Node<'vec3'> | null
   shadowLengthNode?: Node<'float'> | null
+  /** Clouds (or other) overlay: blend `rgb*(1-a)+overlay.rgb`. */
+  overlayNode?: Node<'vec4'> | null
 
   correctGeometricError = true
   lighting = false
@@ -65,7 +67,8 @@ export class AerialPerspectiveNode extends TempNode {
       +this.lighting,
       +this.transmittance,
       +this.inscatter,
-      +this.moonScattering
+      +this.moonScattering,
+      +(this.overlayNode != null)
     )
   }
 
@@ -87,7 +90,7 @@ export class AerialPerspectiveNode extends TempNode {
       altitudeCorrectionUnit
     } = atmosphereContext
 
-    const { colorNode, depthNode, normalNode } = this
+    const { colorNode, depthNode, normalNode, overlayNode } = this
     const depth = depthNode.r.toConst()
 
     const getSurfacePositionECEF = (): Node<'vec3'> => {
@@ -117,6 +120,21 @@ export class AerialPerspectiveNode extends TempNode {
       ).xyz
       const directionECEF = matrixWorldToECEF.mul(vec4(directionWorld, 0)).xyz
       return directionECEF.toVertexStage().normalize()
+    }
+
+    const applyOverlay = (luminance: Node<'vec4'>): Node<'vec4'> => {
+      if (overlayNode == null) {
+        return luminance
+      }
+      const overlay = overlayNode.toVar()
+      // Match WebGL HAS_OVERLAY: fully opaque overlay replaces the buffer.
+      return overlay.a.greaterThanEqual(1).select(
+        overlay,
+        vec4(
+          luminance.rgb.mul(overlay.a.oneMinus()).add(overlay.rgb),
+          luminance.a
+        )
+      )
     }
 
     const surfaceLuminance = Fn(() => {
@@ -247,7 +265,7 @@ export class AerialPerspectiveNode extends TempNode {
       }).Else(() => {
         luminance.rgb.assign(surfaceLuminance)
       })
-      return luminance
+      return applyOverlay(luminance)
     })()
   }
 

@@ -207,7 +207,7 @@ This illustrates that greater total cloud layer height increases computational c
 
 - Introduce global cloud coverage and support rendering views from space.
 
-- Currently developed using GLSL. It does not use node-based TSL yet, and WebGPU is not supported, but both are planned.
+- WebGPU / TSL support is in progress. Procedural texture generators are available via [`@takram/three-clouds/webgpu`](./WEBGPU.md); the full volumetric renderer is not ported yet. See the [WebGPU roadmap](./WEBGPU.md).
 
 # API
 

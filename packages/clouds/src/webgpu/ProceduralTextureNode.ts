@@ -30,6 +30,9 @@ export abstract class ProceduralTextureNode extends TempNode {
 
   readonly texture = this.createStorageTexture()
 
+  /** When true, the next setup() dispatches a one-shot compute fill. */
+  needsCompute = true
+
   private readonly textureNode: TextureNode
 
   constructor(size = new Vector2(1)) {
@@ -59,7 +62,10 @@ export abstract class ProceduralTextureNode extends TempNode {
   }
 
   setSize(width: number, height: number): this {
-    this.texture.setSize(width, height, this.texture.depth)
+    if (this.texture.width !== width || this.texture.height !== height) {
+      this.texture.setSize(width, height, this.texture.depth)
+      this.needsCompute = true
+    }
     return this
   }
 
@@ -71,25 +77,33 @@ export abstract class ProceduralTextureNode extends TempNode {
   override setup(builder: NodeBuilder): unknown {
     const { width, height } = this.texture
 
-    const computeNode = Fn(() => {
-      const id = instanceIndex
-      const x = id.mod(width)
-      const y = id.div(width)
-      const size = uvec2(width, height)
-      If(uvec2(x, y).greaterThanEqual(size).any(), () => {
-        Return()
-      })
-      const textureCoordinate = vec2(x, y)
-      const uv = textureCoordinate.add(0.5).div(vec2(width, height))
+    // Match WebGL ProceduralTextureBase.needsRender: fill once unless dirtied.
+    // Rebuild the compute graph each setup so NodeBuilder stays current; only
+    // the GPU dispatch is gated.
+    if (this.needsCompute) {
+      this.needsCompute = false
 
-      textureStore(
-        this.texture,
-        textureCoordinate,
-        this.setupOutputNode(uv, builder)
-      )
-    })().compute(width * height, [8, 8, 1])
+      const computeNode = Fn(() => {
+        const id = instanceIndex
+        const x = id.mod(width)
+        const y = id.div(width)
+        const size = uvec2(width, height)
+        If(uvec2(x, y).greaterThanEqual(size).any(), () => {
+          Return()
+        })
+        const textureCoordinate = vec2(x, y)
+        // Texel centers, matching WebGL ProceduralTexture UV convention.
+        const uv = textureCoordinate.add(0.5).div(vec2(width, height))
 
-    void builder.renderer.compute(computeNode)
+        textureStore(
+          this.texture,
+          textureCoordinate,
+          this.setupOutputNode(uv, builder)
+        )
+      })().compute(width * height, [8, 8, 1])
+
+      void builder.renderer.compute(computeNode)
+    }
 
     return super.setup(builder)
   }
