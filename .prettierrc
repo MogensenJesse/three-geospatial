@@ -1,59 +1,10 @@
 {
   "arrowParens": "avoid",
-  "bracketSameLine": false,
-  "bracketSpacing": true,
   "endOfLine": "lf",
-  "jsxSingleQuote": true,
   "printWidth": 80,
   "semi": false,
   "singleQuote": true,
   "tabWidth": 2,
   "trailingComma": "none",
-  "useTabs": false,
-  "plugins": [
-    "@ianvs/prettier-plugin-sort-imports",
-    "prettier-plugin-jsdoc",
-    "prettier-plugin-glsl"
-  ],
-  "importOrder": [
-    "<THIRD_PARTY_MODULES>",
-    "",
-    "^@takram/.*$",
-    "",
-    "^(?!.*(\\.css|\\?raw)$)[./].*$",
-    "",
-    "\\?raw$",
-    "",
-    "\\.css$"
-  ],
-  "importOrderParserPlugins": [
-    "typescript",
-    "jsx",
-    "classProperties",
-    "decorators-legacy"
-  ],
-  "importOrderTypeScriptVersion": "5.0.0",
-  "overrides": [
-    {
-      "files": ["*.glsl", "*.frag", "*.vert"],
-      "options": {
-        "parser": "glsl-parser",
-        "printWidth": 100
-      }
-    },
-    {
-      "files": ["*.md"],
-      "options": {
-        "importOrder": [
-          "<THIRD_PARTY_MODULES>",
-          "",
-          "^(?!.*\\.(css|glsl|frag|vert)$)[./].*$",
-          "",
-          "\\.(glsl|frag|vert)$",
-          "",
-          "\\.css$"
-        ]
-      }
-    }
-  ]
+  "useTabs": false
 }
