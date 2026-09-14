@@ -2,6 +2,7 @@
 
 import {
   LinearFilter,
+  LinearMipmapLinearFilter,
   NoColorSpace,
   RepeatWrapping,
   UnsignedByteType,
@@ -31,6 +32,12 @@ export abstract class ProceduralTextureNode extends TempNode {
     return 'ProceduralTextureNode'
   }
 
+  /**
+   * When true, the storage texture keeps a mip chain and auto-updates after
+   * compute writes (local weather / turbulence). Shape/detail stay false.
+   */
+  protected enableMipmaps = false
+
   readonly texture = this.createStorageTexture()
 
   /** When true, the next setup() dispatches a one-shot compute fill. */
@@ -47,12 +54,20 @@ export abstract class ProceduralTextureNode extends TempNode {
   protected createStorageTexture(name?: string): StorageTexture {
     const texture = new StorageTexture(1, 1)
     texture.type = UnsignedByteType
-    texture.minFilter = LinearFilter
     texture.magFilter = LinearFilter
     texture.wrapS = RepeatWrapping
     texture.wrapT = RepeatWrapping
     texture.colorSpace = NoColorSpace
-    texture.generateMipmaps = false
+    if (this.enableMipmaps) {
+      texture.generateMipmaps = true
+      // Runtime WebGPU StorageTexture flag; typings lag the implementation.
+      ;(texture as StorageTexture & { mipmapsAutoUpdate: boolean }).mipmapsAutoUpdate =
+        true
+      texture.minFilter = LinearMipmapLinearFilter
+    } else {
+      texture.generateMipmaps = false
+      texture.minFilter = LinearFilter
+    }
 
     const typeName = (this.constructor as typeof Node).type
     texture.name = name != null ? `${typeName}.${name}` : typeName

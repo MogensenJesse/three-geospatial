@@ -45,7 +45,7 @@ const hashJitter = /*#__PURE__*/ FnLayout({
   return seed.dot(vec2(12.9898, 78.233)).sin().mul(43758.5453).fract()
 })
 
-const raySlabIntersection = /*#__PURE__*/ FnLayout({
+export const raySlabIntersection = /*#__PURE__*/ FnLayout({
   name: 'rayCloudSlabIntersection',
   type: 'vec2',
   inputs: [
@@ -185,7 +185,10 @@ export interface SampleShadowOpticalDepthContext {
   environment: CloudsEnvironment
   layers: CloudLayerParameterNodes
   shadow: ShadowParameterNodes
+  /** Per-cascade textures (legacy) or unused when shadowAtlas is set. */
   shadowTextures: readonly TextureNode[]
+  /** Horizontal atlas [c0|c1|c2] — preferred WebGPU march path (one bind). */
+  shadowAtlas?: TextureNode | null
   debugMode?: Node<'float'>
   viewMatrix: Node<'mat4'>
 }
@@ -245,23 +248,46 @@ export function sampleShadowOpticalDepth(
             remapClamp(sunDirection.y, 0.1, 0)
           )
 
+          const atlas = context.shadowAtlas
+          const cascadeCount = shadow.cascadeCount
           const readAt = (sampleUv: Node<'vec2'>): Node<'float'> => {
-            let value = readShadowOpticalDepth(
-              shadowTextures[0].sample(sampleUv),
-              distanceToTop,
-              distanceOffset
-            )
+            if (atlas != null) {
+              // Horizontal atlas: u = (cascade + u) / N
+              // Must use float() — int cascadeCount would truncate U to tile edges
+              // (looks like huge strokes that jump when cascades change).
+              const u = sampleUv.x.clamp(0, 1)
+              const v = sampleUv.y.clamp(0, 1)
+              const atlasUv = vec2(
+                float(cascadeIndex).add(u).div(float(cascadeCount)),
+                v
+              )
+              return readShadowOpticalDepth(
+                atlas.sample(atlasUv),
+                distanceToTop,
+                distanceOffset
+              )
+            }
+            // Legacy multi-texture path (debug / fallback).
+            const value = float(0).toVar()
+            If(cascadeIndex.equal(0), () => {
+              value.assign(
+                readShadowOpticalDepth(
+                  shadowTextures[0].sample(sampleUv),
+                  distanceToTop,
+                  distanceOffset
+                )
+              )
+            })
             for (let i = 1; i < shadowTextures.length; ++i) {
-              value = cascadeIndex
-                .equal(i)
-                .select(
+              If(cascadeIndex.equal(i), () => {
+                value.assign(
                   readShadowOpticalDepth(
                     shadowTextures[i].sample(sampleUv),
                     distanceToTop,
                     distanceOffset
-                  ),
-                  value
+                  )
                 )
+              })
             }
             return value
           }
@@ -295,6 +321,13 @@ export function sampleShadowOpticalDepth(
           const debugMode = context.debugMode
           if (debugMode != null) {
             const raw = (channel: 'r' | 'g' | 'b' | 'a'): Node<'float'> => {
+              if (atlas != null) {
+                const atlasUv = vec2(
+                  float(cascadeIndex).add(uv.x.clamp(0, 1)).div(float(cascadeCount)),
+                  uv.y.clamp(0, 1)
+                )
+                return atlas.sample(atlasUv)[channel]
+              }
               let value = shadowTextures[0].sample(uv)[channel]
               for (let i = 1; i < shadowTextures.length; ++i) {
                 value = cascadeIndex
@@ -488,8 +521,9 @@ export function setupShadowMarchColor(
                 march.mipLevel,
                 jitter,
                 {
-                  forceDisableShapeDetail: true,
-                  forceDisableTurbulence: true
+                  // Phase 5: honour shapeDetail/turbulence uniforms from presets.
+                  forceDisableShapeDetail: false,
+                  forceDisableTurbulence: false
                 }
               )
               If(

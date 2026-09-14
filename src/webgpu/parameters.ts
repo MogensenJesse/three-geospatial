@@ -49,6 +49,8 @@ export class CloudParameterNodes {
   shapeTexture: Texture3DNode | null = null
   shapeDetailTexture: Texture3DNode | null = null
   turbulenceTexture: TextureNode | null = null
+  /** Optional 3D blue-noise / STBN texture for march jitter. */
+  stbnTexture: Texture3DNode | null = null
 
   /** When true, sampleMedia applies shape-detail erosion. */
   readonly shapeDetailEnabled = uniform(true).setName('shapeDetailEnabled')
@@ -73,6 +75,11 @@ export class CloudParameterNodes {
 
   setTurbulenceTexture(node: TextureNode | null): this {
     this.turbulenceTexture = node
+    return this
+  }
+
+  setStbnTexture(node: Texture3DNode | null): this {
+    this.stbnTexture = node
     return this
   }
 }

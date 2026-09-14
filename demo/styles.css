@@ -167,3 +167,21 @@ select {
   color: #ffd7d7;
   line-height: 1.5;
 }
+
+details.control-group > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin: 0 0 0.75rem;
+  list-style: none;
+}
+
+details.control-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.control-group[open] > summary {
+  margin-bottom: 0.75rem;
+}

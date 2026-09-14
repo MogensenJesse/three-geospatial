@@ -48,14 +48,24 @@
         <h2 id="rendering-controls-heading">Rendering</h2>
 
         <label>
+          <span>Quality preset</span>
+          <select id="quality-preset">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high" selected>High</option>
+            <option value="ultra">Ultra</option>
+          </select>
+        </label>
+
+        <label>
           <span
             >Resolution scale
-            <output id="resolution-scale-value">50%</output></span
+            <output id="resolution-scale-value">100%</output></span
           >
           <select id="resolution-scale">
-            <option value="0.5" selected>50%</option>
+            <option value="0.5">50%</option>
             <option value="0.75">75%</option>
-            <option value="1">100%</option>
+            <option value="1" selected>100%</option>
           </select>
         </label>
 
@@ -66,17 +76,22 @@
 
         <label class="toggle">
           <span>Shape detail</span>
-          <input id="shape-detail" type="checkbox" />
+          <input id="shape-detail" type="checkbox" checked />
         </label>
 
         <label class="toggle">
           <span>Turbulence</span>
-          <input id="turbulence" type="checkbox" />
+          <input id="turbulence" type="checkbox" checked />
         </label>
 
         <label class="toggle">
           <span>Cloud shadows</span>
           <input id="cloud-shadows" type="checkbox" checked />
+        </label>
+
+        <label class="toggle">
+          <span>Scene shadows</span>
+          <input id="scene-shadows" type="checkbox" checked />
         </label>
       </section>
 
@@ -85,6 +100,86 @@
         aria-labelledby="lighting-controls-heading"
       >
         <h2 id="lighting-controls-heading">Lighting</h2>
+
+        <label>
+          <span
+            >Sun detail samples
+            <output id="sun-detail-value">2</output></span
+          >
+          <input
+            id="sun-detail"
+            type="range"
+            min="0"
+            max="4"
+            step="1"
+            value="2"
+          />
+        </label>
+
+        <label>
+          <span
+            >March iterations
+            <output id="march-iterations-value">500</output></span
+          >
+          <input
+            id="march-iterations"
+            type="range"
+            min="32"
+            max="768"
+            step="16"
+            value="500"
+          />
+        </label>
+
+        <label>
+          <span
+            >Multi-scatter octaves
+            <output id="multi-scatter-value">8</output></span
+          >
+          <input
+            id="multi-scatter"
+            type="range"
+            min="1"
+            max="12"
+            step="1"
+            value="8"
+          />
+        </label>
+
+        <label>
+          <span>Powder <output id="powder-scale-value">0.80</output></span>
+          <input
+            id="powder-scale"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value="0.8"
+          />
+        </label>
+
+        <label>
+          <span
+            >Ground bounce
+            <output id="ground-bounce-value">1.00</output></span
+          >
+          <input
+            id="ground-bounce"
+            type="range"
+            min="0"
+            max="2"
+            step="0.05"
+            value="1"
+          />
+        </label>
+
+        <label>
+          <span>Phase function</span>
+          <select id="phase-function">
+            <option value="approximate" selected>Approximate</option>
+            <option value="accurate">Accurate</option>
+          </select>
+        </label>
 
         <label>
           <span>Sun elevation <output id="sun-value">28°</output></span>
@@ -111,9 +206,36 @@
         </label>
       </section>
 
+      <details class="control-group" id="diagnostics" open>
+        <summary id="diagnostics-heading">Diagnostics</summary>
+
+        <label>
+          <span>Debug output</span>
+          <select id="debug-output">
+            <option value="none" selected>None (composited)</option>
+            <option value="clouds">Cloud color</option>
+            <option value="velocity">Velocity</option>
+            <option value="shadow-cascade-0">Shadow cascade 0</option>
+            <option value="shadow-cascade-1">Shadow cascade 1</option>
+            <option value="shadow-cascade-2">Shadow cascade 2</option>
+            <option value="optical-depth-local">Optical depth (local)</option>
+            <option value="optical-depth-bsm">Optical depth (BSM)</option>
+            <option value="no-shadow">No-shadow comparison</option>
+          </select>
+        </label>
+
+        <label class="toggle">
+          <span>Temporal history</span>
+          <input id="temporal-history" type="checkbox" checked />
+        </label>
+
+        <p id="pass-stats" class="status" aria-live="polite">
+          Pass sizes: —
+        </p>
+      </details>
+
       <p class="hint">Drag to orbit · Scroll to zoom</p>
     </aside>
-
     <section id="error" class="error" role="alert" hidden>
       <h2>Unable to start WebGPU</h2>
       <p id="error-message"></p>

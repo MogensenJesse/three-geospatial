@@ -19,6 +19,8 @@ export interface CloudsEnvironmentOptions {
   sunIrradiance?: Vector3
   /** Linear ambient sky irradiance supplied by the host sky model. */
   skyIrradiance?: Vector3
+  /** Linear RGB ground albedo for underside bounce (flat plane at mapOrigin.y). */
+  groundAlbedo?: Vector3
   /** Optional scene depth texture for terrain/geometry occlusion. */
   sceneDepth?: TextureNode | null
 }
@@ -37,6 +39,7 @@ export class CloudsEnvironment {
   readonly sunDirection = new Vector3(0, 1, 0)
   readonly sunIrradiance = new Vector3(1)
   readonly skyIrradiance = new Vector3(0.15)
+  readonly groundAlbedo = new Vector3(0.3, 0.3, 0.3)
   sceneDepth: TextureNode | null
 
   readonly mapSizeNode = uniform(this.mapSize).setName('cloudMapSize')
@@ -53,6 +56,9 @@ export class CloudsEnvironment {
   readonly skyIrradianceNode = uniform(this.skyIrradiance).setName(
     'cloudSkyIrradiance'
   )
+  readonly groundAlbedoNode = uniform(this.groundAlbedo).setName(
+    'cloudGroundAlbedo'
+  )
 
   constructor(options: CloudsEnvironmentOptions) {
     this.camera = options.camera
@@ -62,6 +68,7 @@ export class CloudsEnvironment {
     this.sunDirection.copy(options.sunDirection ?? this.sunDirection)
     this.sunIrradiance.copy(options.sunIrradiance ?? this.sunIrradiance)
     this.skyIrradiance.copy(options.skyIrradiance ?? this.skyIrradiance)
+    this.groundAlbedo.copy(options.groundAlbedo ?? this.groundAlbedo)
     this.sceneDepth = options.sceneDepth ?? null
     this.update()
   }

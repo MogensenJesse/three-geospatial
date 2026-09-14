@@ -3,6 +3,7 @@
 import {
   HalfFloatType,
   LinearFilter,
+  NoBlending,
   RenderTarget,
   RGBAFormat,
   Vector2
@@ -130,8 +131,9 @@ const varianceClippingUV = /*#__PURE__*/ FnVar(
       .toConst()
     const minColor = mean.sub(deviation).toConst()
     const maxColor = mean.add(deviation).toConst()
+    // WebGL: clipAABB(clamp(mean, min, max), history, ...) — not current.
     return clipAABB(
-      current.clamp(minColor, maxColor),
+      mean.clamp(minColor, maxColor),
       history,
       minColor,
       maxColor
@@ -168,8 +170,9 @@ const varianceClippingLoad = /*#__PURE__*/ FnVar(
       .toConst()
     const minColor = mean.sub(deviation).toConst()
     const maxColor = mean.add(deviation).toConst()
+    // WebGL: clipAABB(clamp(mean, min, max), history, ...) — not current.
     return clipAABB(
-      current.clamp(minColor, maxColor),
+      mean.clamp(minColor, maxColor),
       history,
       minColor,
       maxColor
@@ -211,17 +214,27 @@ class CloudsResolveColorNode extends TempNode {
       const outputColor = vec4(0).toVar()
 
       If(owner.temporalUpscaleNode.greaterThan(0), () => {
-        const lowResCoord = coord.div(4).toConst()
+        // WebGL: lowResCoord = coord / 4 (integer)
+        const lowResCoord = ivec2(
+          coord.x.div(int(4)),
+          coord.y.div(int(4))
+        ).toConst()
         const current = owner.inputNode.load(lowResCoord).toConst()
-        const phaseIndex = coord.y.mod(4).mul(4).add(coord.x.mod(4)).toConst()
-        const currentPhase = bayerPhaseNodes.element(phaseIndex)
-        const useCurrent = currentPhase
-          .equal(owner.frame)
-          .or(owner.historyValid.lessThan(0.5))
 
-        If(useCurrent, () => {
+                // flat[y*4+x]; Bayer offset Y is flipped on the CPU for WebGPU.
+        const phaseIndex = coord.y
+          .mod(int(4))
+          .mul(int(4))
+          .add(coord.x.mod(int(4)))
+          .toConst()
+        const currentPhase = bayerPhaseNodes.element(phaseIndex)
+        const framePhase = owner.frame.mod(int(16))
+        const isCurrentPhase = currentPhase.equal(framePhase)
+
+        If(isCurrentPhase, () => {
           outputColor.assign(current)
         }).Else(() => {
+          // historyValid as mix factor stays live in WGSL (avoids bool fold).
           const closest = getClosestDepthVelocity(
             owner.velocityNode,
             lowResCoord
@@ -232,20 +245,18 @@ class CloudsResolveColorNode extends TempNode {
             .all()
             .and(prevUv.lessThanEqual(1).all())
 
-          If(inside, () => {
-            const history = texture(owner.historyNode, prevUv, int(0))
-            outputColor.assign(
-              varianceClippingUV(
-                owner.inputNode,
-                screenUV,
-                current,
-                history,
-                owner.varianceGamma
-              )
-            )
-          }).Else(() => {
-            outputColor.assign(current)
-          })
+          const historyReproj = texture(owner.historyNode, prevUv, int(0))
+          // WebGL TAAU: variance-clip history; on miss fall back to current
+          // (not same-UV history — that leaves infinite motion trails).
+          const clipped = varianceClippingUV(
+            owner.inputNode,
+            screenUV,
+            current,
+            historyReproj,
+            owner.varianceGamma
+          )
+          const historySample = inside.select(clipped, current)
+          outputColor.assign(mix(current, historySample, owner.historyValid))
         })
       }).Else(() => {
         const current = owner.inputNode.load(coord).toConst()
@@ -258,21 +269,19 @@ class CloudsResolveColorNode extends TempNode {
           .greaterThanEqual(0)
           .all()
           .and(prevUv.lessThanEqual(1).all())
-          .and(owner.historyValid.greaterThan(0.5))
 
-        If(inside, () => {
-          const history = texture(owner.historyNode, prevUv, int(0))
-          const clipped = varianceClippingLoad(
-            owner.inputNode,
-            coord,
-            current,
-            history,
-            float(1)
-          )
-          outputColor.assign(mix(clipped, current, owner.temporalAlpha))
-        }).Else(() => {
-          outputColor.assign(current)
-        })
+        const history = texture(owner.historyNode, prevUv, int(0))
+        const clipped = varianceClippingLoad(
+          owner.inputNode,
+          coord,
+          current,
+          history,
+          float(1)
+        )
+        const temporal = mix(clipped, current, owner.temporalAlpha)
+        const rejected = current
+        const withHistory = inside.select(temporal, rejected)
+        outputColor.assign(mix(current, withHistory, owner.historyValid))
       })
 
       return outputColor
@@ -309,6 +318,8 @@ export class CloudsResolveNode extends TempNode {
   private rendererState?: RendererUtils.RendererState
   private needsClearHistory = true
   private _temporalUpscale = true
+  /** When false, history is never reused (forces current-only resolve). */
+  historyEnabled = true
 
   constructor(inputNode: TextureNode, velocityNode: TextureNode) {
     super('vec4')
@@ -318,6 +329,9 @@ export class CloudsResolveNode extends TempNode {
 
     this.textureNode = outputTexture(this, this.historyTarget.texture)
     this.material.name = 'CloudsResolve'
+    this.material.blending = NoBlending
+    this.material.depthTest = false
+    this.material.depthWrite = false
     this.material.vertexNode = vec4(positionGeometry.xy, 0, 1)
     this.material.fragmentNode = new CloudsResolveColorNode(this)
     this.material.needsUpdate = true
@@ -415,11 +429,14 @@ export class CloudsResolveNode extends TempNode {
     renderer.setRenderTarget(this.resolveTarget)
     renderer.setClearColor(0, 0)
     renderer.clear()
+    if (!this.historyEnabled) {
+      this.historyValid.value = 0
+    }
     this.mesh.render(renderer)
-    restoreRendererState(renderer, this.rendererState)
+    restoreRendererState(renderer, this.rendererState!)
 
     this.swapBuffers()
-    this.historyValid.value = 1
+    this.historyValid.value = this.historyEnabled ? 1 : 0
   }
 
   override setup(_builder: NodeBuilder): unknown {

@@ -7,6 +7,7 @@ import {
   float,
   Fn,
   If,
+  int,
   Loop,
   max,
   min,
@@ -14,9 +15,11 @@ import {
   positionGeometry,
   pow,
   remapClamp,
+  interleavedGradientNoise,
   screenCoordinate,
   screenUV,
   struct,
+  textureSize,
   uniform,
   vec2,
   vec3,
@@ -46,6 +49,7 @@ import {
   sampleWeather
 } from './sampling'
 import type { ShadowParameterNodes } from './shadowParameters'
+import { marchCloudOpticalDepth } from './cloudOpticalDepth'
 import { sampleShadowOpticalDepth } from './shadowSampling'
 
 const RECIPROCAL_PI4 = /*#__PURE__*/ float(1 / (4 * Math.PI))
@@ -76,6 +80,10 @@ export class CloudsMarchParameters {
     'cloudsTargetUvScale'
   )
   readonly mipLevelScale = uniform(1).setName('cloudsMipLevelScale')
+  /** Jittered inverse projection (WebGL CloudsMaterial parity). */
+  readonly inverseProjectionMatrix = uniform(new Matrix4()).setName(
+    'cloudsInverseProjectionMatrix'
+  )
   readonly reprojectionMatrix = uniform(new Matrix4()).setName(
     'cloudsReprojectionMatrix'
   )
@@ -103,7 +111,18 @@ export class CloudsMarchParameters {
     'multiScatteringOctaves'
   )
 
+  readonly maxIterationCountToGround = uniform(0).setName(
+    'maxIterationCountToGround'
+  )
+  readonly powderScale = uniform(0.8).setName('powderScale')
+  readonly powderExponent = uniform(150).setName('powderExponent')
+  readonly groundBounceScale = uniform(1).setName('groundBounceScale')
+  /** 0 = approximate dual-lobe, 1 = accurate (Draine + HG mix). */
+  readonly phaseFunctionMode = uniform(0, 'int').setName('phaseFunctionMode')
+
   readonly resolution = uniform(new Vector2(1, 1)).setName('cloudsResolution')
+  /** Host frame index for optional STBN jitter. */
+  readonly frame = uniform(0, 'int').setName('cloudsFrame')
 }
 
 const henyeyGreenstein = /*#__PURE__*/ FnLayout({
@@ -127,6 +146,27 @@ const henyeyGreenstein = /*#__PURE__*/ FnLayout({
   )
 })
 
+const drainePhase = /*#__PURE__*/ FnLayout({
+  name: 'cloudsDrainePhase',
+  type: 'float',
+  inputs: [
+    { name: 'u', type: 'float' },
+    { name: 'g', type: 'float' },
+    { name: 'a', type: 'float' }
+  ]
+})(([u, g, a]) => {
+  const g2 = g.mul(g)
+  return float(1)
+    .sub(g2)
+    .mul(float(1).add(a.mul(u).mul(u)))
+    .div(
+      float(4)
+        .mul(float(1).add(a.mul(float(1).add(g2.mul(2))).div(3)))
+        .mul(Math.PI)
+        .mul(pow(float(1).add(g2).sub(g.mul(2).mul(u)), 1.5))
+    )
+})
+
 const phaseFunction = /*#__PURE__*/ FnLayout({
   name: 'cloudsPhaseFunction',
   type: 'float',
@@ -135,12 +175,24 @@ const phaseFunction = /*#__PURE__*/ FnLayout({
     { name: 'attenuation', type: 'float' },
     { name: 'g1', type: 'float' },
     { name: 'g2', type: 'float' },
-    { name: 'mixWeight', type: 'float' }
+    { name: 'mixWeight', type: 'float' },
+    { name: 'phaseMode', type: 'int' }
   ]
-})(([cosTheta, attenuation, g1, g2, mixWeight]) => {
+})(([cosTheta, attenuation, g1, g2, mixWeight, phaseMode]) => {
+  // Accurate fit for large particles (d=10): NVIDIA approximate Mie.
+  const gHG = float(0.988176691700256)
+  const gD = float(0.5556712547839497)
+  const alpha = float(21.995520856274638)
+  const accurateWeight = float(0.4819554318404214)
+  const accurate = mix(
+    henyeyGreenstein(vec2(gHG).mul(attenuation), cosTheta).x,
+    drainePhase(cosTheta, gD.mul(attenuation), alpha),
+    accurateWeight
+  )
   const g = vec2(g1, g2).mul(attenuation)
   const weights = vec2(float(1).sub(mixWeight), mixWeight)
-  return henyeyGreenstein(g, cosTheta).dot(weights)
+  const approximate = henyeyGreenstein(g, cosTheta).dot(weights)
+  return phaseMode.equal(1).select(accurate, approximate)
 })
 
 const approximateMultipleScattering = /*#__PURE__*/ FnLayout({
@@ -152,9 +204,10 @@ const approximateMultipleScattering = /*#__PURE__*/ FnLayout({
     { name: 'g1', type: 'float' },
     { name: 'g2', type: 'float' },
     { name: 'mixWeight', type: 'float' },
-    { name: 'octaveCount', type: 'int' }
+    { name: 'octaveCount', type: 'int' },
+    { name: 'phaseMode', type: 'int' }
   ]
-})(([opticalDepth, cosTheta, g1, g2, mixWeight, octaveCount]) => {
+})(([opticalDepth, cosTheta, g1, g2, mixWeight, octaveCount, phaseMode]) => {
   const coefficients = vec3(1).toVar()
   const scattering = float(0).toVar()
   Loop({ start: 0, end: 8 }, ({ i }) => {
@@ -164,7 +217,16 @@ const approximateMultipleScattering = /*#__PURE__*/ FnLayout({
     scattering.addAssign(
       coefficients.x
         .mul(exp(opticalDepth.negate().mul(coefficients.y)))
-        .mul(phaseFunction(cosTheta, coefficients.z, g1, g2, mixWeight))
+        .mul(
+          phaseFunction(
+            cosTheta,
+            coefficients.z,
+            g1,
+            g2,
+            mixWeight,
+            phaseMode
+          )
+        )
     )
     coefficients.mulAssign(0.5)
   })
@@ -186,6 +248,7 @@ export interface MarchCloudsContext {
   march: CloudsMarchParameters
   shadow?: ShadowParameterNodes | null
   shadowBuffers?: readonly TextureNode[] | null
+  shadowAtlas?: TextureNode | null
   depthNode?: TextureNode | null
 }
 
@@ -198,14 +261,10 @@ export function setupCloudsMarch(
   const camera = environment.camera
 
   return Fn(() => {
-    const clipPosition = vec4(
-      positionGeometry.xy.add(
-        vec2(march.temporalJitter.x, march.temporalJitter.y.negate()).mul(2)
-      ),
-      positionGeometry.z,
-      1
-    )
-    const positionView = inverseProjectionMatrix(camera)
+    // WebGL clouds.vert: viewPosition = inverseProjectionMatrix * vec4(position,1)
+    // with Bayer-jittered projection inverted on the CPU.
+    const clipPosition = vec4(positionGeometry.xy, positionGeometry.z, 1)
+    const positionView = march.inverseProjectionMatrix
       .mul(clipPosition)
       .xyz.toVar()
     const rayDirection = inverseViewMatrix(camera)
@@ -289,7 +348,23 @@ export function setupCloudsMarch(
         .mul(rayDirection)
         .add(cameraPosition)
         .toVar()
-      const jitter = hashJitter(screenCoordinate.xy)
+      // Prefer host STBN when provided; otherwise hash jitter.
+      const jitter = float(0).toVar()
+      if (parameters.stbnTexture != null) {
+        const stbn = parameters.stbnTexture
+        const size = textureSize(stbn, int(0))
+        const scale = float(1).div(size)
+        const layer = float(march.frame.mod(size.z))
+        jitter.assign(
+          stbn.sample(vec3(screenCoordinate.xy, layer).mul(scale)).r
+        )
+      } else {
+        jitter.assign(
+          interleavedGradientNoise(
+            screenCoordinate.xy.add(march.temporalJitter.mul(march.resolution))
+          )
+        )
+      }
       const startUv = getEnvironmentUv(environment, rayOrigin)
       const mipFromUv = getMipLevel(
         startUv.mul(parameters.localWeatherRepeat),
@@ -319,7 +394,7 @@ export function setupCloudsMarch(
       const rayStartTexelsPerPixel = pow(2, mipLevel)
 
       Loop(
-        { start: 0, end: 256, type: 'int', name: 'i', condition: '<' },
+        { start: 0, end: 512, type: 'int', name: 'i', condition: '<' },
         ({ i }) => {
           If(
             i
@@ -395,32 +470,74 @@ export function setupCloudsMarch(
               If(
                 media.get('extinction').greaterThan(march.minExtinction),
                 () => {
-                  const opticalDepth = float(0).toVar()
+                  // Local sun-detail march (Phase 2); BSM fills the remainder.
+                  // With BSM present, skip the nested sun march at coarser mips
+                  // (same gate as ground bounce) — biggest shadows-on CPU saver.
+                  const localOpticalDepth = float(0).toVar()
+                  const sunRayDistance = float(0).toVar()
                   const shadowBuffers = context.shadowBuffers
-                  if (context.shadow != null && shadowBuffers != null) {
-                    If(height.lessThan(layers.shadowTopHeight), () => {
-                      const sampled = context.shadow!.enabled.mul(
-                        sampleShadowOpticalDepth(
+                  const shadowAtlas = context.shadowAtlas
+                  const hasBsm =
+                    context.shadow != null &&
+                    (shadowBuffers != null || shadowAtlas != null)
+                  const runLocalSun = march.maxIterationCountToSun.greaterThan(0)
+                  If(runLocalSun, () => {
+                    const sunMarch = marchCloudOpticalDepth(
+                      { environment, parameters, layers, march },
+                      positionWorld,
+                      sunDirection,
+                      sampleMip,
+                      jitter,
+                      int(march.maxIterationCountToSun)
+                    )
+                    localOpticalDepth.assign(sunMarch.get('opticalDepth'))
+                    sunRayDistance.assign(sunMarch.get('rayDistance'))
+                  })
+                  const bsmOpticalDepth = float(0).toVar()
+                  // JS-null buffers omit BSM from the shader entirely (toggle
+                  // invalidates the march material). Runtime enabled gates the
+                  // sample so we never pay Vogel PCF when shadows are off.
+                  if (
+                    context.shadow != null &&
+                    (shadowAtlas != null || shadowBuffers != null)
+                  ) {
+                    If(
+                      context.shadow.enabled
+                        .greaterThan(0)
+                        .and(height.lessThan(layers.shadowTopHeight)),
+                      () => {
+                        const sampled = sampleShadowOpticalDepth(
                           {
                             environment,
                             layers,
                             shadow: context.shadow!,
-                            shadowTextures: shadowBuffers,
+                            shadowTextures: shadowBuffers ?? [],
+                            shadowAtlas: context.shadowAtlas ?? null,
                             debugMode: march.shadowDebugOpticalDepth,
                             viewMatrix: viewMatrix(camera)
                           },
                           positionWorld,
-                          float(0),
+                          sunRayDistance,
                           jitter
                         )
-                      )
-                      opticalDepth.assign(
-                        march.shadowDebugOpticalDepth
-                          .greaterThanEqual(0)
-                          .select(march.shadowDebugOpticalDepth, sampled)
-                      )
-                    })
+                        bsmOpticalDepth.assign(
+                          march.shadowDebugOpticalDepth
+                            .greaterThanEqual(0)
+                            .select(march.shadowDebugOpticalDepth, sampled)
+                        )
+                      }
+                    )
                   }
+
+                  const opticalDepth = localOpticalDepth
+                    .add(bsmOpticalDepth)
+                    .toVar()
+                  // Debug: -3 = local only, -4 = BSM only (else combined).
+                  If(march.shadowDebugOpticalDepth.equal(-3), () => {
+                    opticalDepth.assign(localOpticalDepth)
+                  }).ElseIf(march.shadowDebugOpticalDepth.equal(-4), () => {
+                    opticalDepth.assign(bsmOpticalDepth)
+                  })
 
                   const direct = environment.sunIrradianceNode.mul(
                     approximateMultipleScattering(
@@ -429,22 +546,60 @@ export function setupCloudsMarch(
                       march.scatterAnisotropy1,
                       march.scatterAnisotropy2,
                       march.scatterAnisotropyMix,
-                      march.multiScatteringOctaves
+                      march.multiScatteringOctaves,
+                      march.phaseFunctionMode
                     )
                   )
+                  const radiance = direct.toVar()
+
+                  // Ground bounce (flat plane at mapOrigin.y). Disabled when
+                  // scale or ground iterations are zero.
+                  If(
+                    march.groundBounceScale
+                      .greaterThan(0)
+                      .and(march.maxIterationCountToGround.greaterThan(0))
+                      .and(height.lessThan(layers.shadowTopHeight))
+                      .and(sampleMip.lessThan(0.5)),
+                    () => {
+                      const downDirection = vec3(0, -1, 0)
+                      const groundMarch = marchCloudOpticalDepth(
+                        { environment, parameters, layers, march },
+                        positionWorld,
+                        downDirection,
+                        sampleMip,
+                        jitter,
+                        int(march.maxIterationCountToGround)
+                      )
+                      const groundIrradiance = environment.skyIrradianceNode
+                        .add(
+                          environment.sunIrradianceNode.mul(
+                            float(1).sub(parameters.coverage)
+                          )
+                        )
+                        .toVar()
+                      const bounced = environment.groundAlbedoNode
+                        .mul(1 / Math.PI)
+                        .mul(groundIrradiance)
+                        .mul(exp(groundMarch.get('opticalDepth').negate()))
+                      radiance.addAssign(
+                        bounced
+                          .mul(RECIPROCAL_PI4)
+                          .mul(march.groundBounceScale)
+                      )
+                    }
+                  )
+
                   const skyGradient = weather
                     .get('heightFraction')
                     .mul(0.5)
                     .add(0.5)
                     .dot(media.get('weight'))
-                  const radiance = direct
-                    .add(
-                      environment.skyIrradianceNode
-                        .mul(RECIPROCAL_PI4)
-                        .mul(skyGradient)
-                        .mul(march.skyLightScale)
-                    )
-                    .toVar()
+                  radiance.addAssign(
+                    environment.skyIrradianceNode
+                      .mul(RECIPROCAL_PI4)
+                      .mul(skyGradient)
+                      .mul(march.skyLightScale)
+                  )
 
                   If(march.shadowDebugOpticalDepth.equal(-2), () => {
                     radiance.assign(vec3(opticalDepth))
@@ -458,7 +613,8 @@ export function setupCloudsMarch(
                             march.scatterAnisotropy1,
                             march.scatterAnisotropy2,
                             march.scatterAnisotropyMix,
-                            march.multiScatteringOctaves
+                            march.multiScatteringOctaves,
+                            march.phaseFunctionMode
                           )
                         )
                       )
@@ -473,6 +629,22 @@ export function setupCloudsMarch(
                       }
                     )
                   radiance.mulAssign(media.get('scattering'))
+
+                  // Powder: after scattering, before integration.
+                  If(march.powderScale.greaterThan(0), () => {
+                    radiance.mulAssign(
+                      float(1).sub(
+                        march.powderScale.mul(
+                          exp(
+                            media
+                              .get('extinction')
+                              .negate()
+                              .mul(march.powderExponent)
+                          )
+                        )
+                      )
+                    )
+                  })
 
                   const stepMeters = stepSize.div(worldScale)
                   const transmittance = exp(
@@ -520,6 +692,7 @@ export function setupCloudsMarch(
       outputColor.assign(color)
     })
 
+    // NDC Y+ is up; WebGPU screenUV Y+ is down (top-left). Flip Y for prevUv.
     const prevUv = vec2(0).toVar()
     If(hitClouds.greaterThan(0), () => {
       const frontPositionWorld = frontDepth
@@ -534,7 +707,9 @@ export function setupCloudsMarch(
       const prevNdc = prevClip.xy.div(prevClip.w)
       prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
     })
-    const depthVelocity = vec4(frontDepth, screenUV.sub(prevUv), 0)
+    // a=1 required: MRT packs vec4; a=0 under material blending can zero RGB.
+    const velocity = screenUV.sub(prevUv)
+    const depthVelocity = vec4(frontDepth, velocity, 1)
     return marchResultStruct(outputColor, frontDepth, depthVelocity)
   })() as MarchResultNode
 }

@@ -1,14 +1,18 @@
 // src/webgpu/sampling.ts
 
 import {
+  dFdx,
+  dFdy,
   float,
   If,
+  log2,
   max,
   mix,
   pow,
   remapClamp,
   saturate,
   struct,
+  textureLevel,
   vec3,
   vec4
 } from 'three/tsl'
@@ -123,10 +127,14 @@ export const getMipLevel = /*#__PURE__*/ FnLayout({
     { name: 'uv', type: 'vec2' },
     { name: 'resolution', type: 'vec2' }
   ]
-})(([_uv, _resolution]) => {
-  // Avoid screen-space derivatives in the clouds RTT pass for now — they can
-  // pull fragment-only builtins into invalid pipeline states on some paths.
-  return float(0)
+})(([uv, resolution]) => {
+  // WebGL clouds.glsl footprint LOD. Fragment-stage only (not compute).
+  const mipLevelScale = float(0.1)
+  const coord = uv.mul(resolution)
+  const ddx = dFdx(coord)
+  const ddy = dFdy(coord)
+  const deltaMaxSqr = max(ddx.dot(ddx), ddy.dot(ddy)).mul(mipLevelScale)
+  return max(float(0), float(0.5).mul(log2(max(float(1), deltaMaxSqr))))
 })
 
 export const insideLayerIntervals = /*#__PURE__*/ FnLayout({
@@ -204,8 +212,8 @@ export function sampleWeather(
   const weatherUv = uv
     .mul(parameters.localWeatherRepeat)
     .add(parameters.localWeatherOffset)
-  // Storage procedural textures have no mip chain; use filtered sample.
-  const rawWeather = localWeatherTexture.sample(weatherUv)
+  // Explicit LOD matches WebGL textureLod(localWeatherTexture, ..., mipLevel).
+  const rawWeather = textureLevel(localWeatherTexture, weatherUv, mipLevel)
   const localWeather = swizzleLocalWeather(
     rawWeather,
     layers.localWeatherChannels

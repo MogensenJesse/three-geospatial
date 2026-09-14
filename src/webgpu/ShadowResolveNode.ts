@@ -207,7 +207,7 @@ export class ShadowResolveNode extends TempNode {
   }
 
   readonly cascadeCount: number
-  readonly temporalAlpha = uniform(0.9).setName('shadowTemporalAlpha')
+  readonly temporalAlpha = uniform(0.01).setName('shadowTemporalAlpha')
   readonly varianceGamma = uniform(1).setName('shadowVarianceGamma')
   readonly texelSize = uniform(new Vector2(1, 1)).setName('shadowTexelSize')
 

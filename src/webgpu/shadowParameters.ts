@@ -52,14 +52,14 @@ export class ShadowMarchParameters {
     'shadowMarchResolution'
   )
 
-  readonly maxIterationCount = uniform(25, 'int').setName(
+  readonly maxIterationCount = uniform(50, 'int').setName(
     'shadowMaxIterationCount'
   )
   readonly minStepSize = uniform(100).setName('shadowMinStepSize')
   readonly maxStepSize = uniform(1000).setName('shadowMaxStepSize')
-  readonly minDensity = uniform(1e-4).setName('shadowMinDensity')
-  readonly minExtinction = uniform(1e-4).setName('shadowMinExtinction')
-  readonly minTransmittance = uniform(1e-2).setName('shadowMinTransmittance')
+  readonly minDensity = uniform(1e-5).setName('shadowMinDensity')
+  readonly minExtinction = uniform(1e-5).setName('shadowMinExtinction')
+  readonly minTransmittance = uniform(1e-4).setName('shadowMinTransmittance')
   readonly opticalDepthTailScale = uniform(2).setName('opticalDepthTailScale')
 
   /** Fixed mip bias for the active cascade (matches WebGL mipLevels[]). */

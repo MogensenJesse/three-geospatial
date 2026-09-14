@@ -6,6 +6,7 @@ import {
   LinearFilter,
   Matrix4,
   NearestFilter,
+  NoBlending,
   RenderTarget,
   RGBAFormat,
   Vector2,
@@ -79,6 +80,7 @@ class CloudsMarchColorNode extends MRTNode {
       march: this.owner.march,
       shadow: this.owner.shadow,
       shadowBuffers: this.owner.shadowBuffers,
+      shadowAtlas: this.owner.shadowAtlas,
       depthNode: this.owner.environment.sceneDepth
     })
     this.outputNodes = {
@@ -110,6 +112,7 @@ export class CloudsMarchNode extends TempNode {
   /** Optional BSM inputs (Phase C). */
   shadow: ShadowParameterNodes | null = null
   shadowBuffers: readonly TextureNode[] | null = null
+  shadowAtlas: TextureNode | null = null
 
   private readonly renderTarget: RenderTarget
   private readonly textureNode: TextureNode
@@ -151,8 +154,12 @@ export class CloudsMarchNode extends TempNode {
     this.renderTarget.textures[1].name = 'velocity'
 
     this.textureNode = outputTexture(this, this.renderTarget.textures[0])
-    this.velocityNode = texture(this.renderTarget.textures[1])
+    // Same owner hook as color so a velocity-only debug view still runs the march.
+    this.velocityNode = outputTexture(this, this.renderTarget.textures[1])
     this.material.name = 'CloudsMarch'
+    this.material.blending = NoBlending
+    this.material.depthTest = false
+    this.material.depthWrite = false
     // Fullscreen clip-space quad (same pattern as core debug / filter RTT).
     this.material.vertexNode = vec4(positionGeometry.xy, 0, 1)
     this.mesh = new QuadMesh(this.material)
@@ -180,6 +187,11 @@ export class CloudsMarchNode extends TempNode {
 
   getOutputSize(target: Vector2): Vector2 {
     return target.copy(this.outputSize)
+  }
+
+  /** Actual march render-target size (after resolution scale / TAAU /4). */
+  getRenderSize(target: Vector2): Vector2 {
+    return target.set(this.renderTarget.width, this.renderTarget.height)
   }
 
   get temporalUpscale(): boolean {
@@ -224,30 +236,45 @@ export class CloudsMarchNode extends TempNode {
     const rangeCamera = camera as Camera & { near: number; far: number }
     march.cameraNear.value = rangeCamera.near
     march.cameraFar.value = rangeCamera.far
+    march.frame.value = this.frame
 
     let dx = 0
     let dy = 0
     if (this.temporalUpscale) {
       const offset = bayerOffsets[this.frame % bayerOffsets.length]
-      dx = ((offset.x - 0.5) / march.resolution.value.x) * 4
-      dy = ((offset.y - 0.5) / march.resolution.value.y) * 4
+      // WebGPU screen Y is top-down; flip Bayer offset Y so phase rows align.
+      const ox = offset.x
+      const oy = 1 - offset.y
+      dx = ((ox - 0.5) / march.resolution.value.x) * 4
+      dy = ((oy - 0.5) / march.resolution.value.y) * 4
       march.mipLevelScale.value = 0.25
     } else {
       march.mipLevelScale.value = 1
     }
-    march.temporalJitter.value.set(dx, dy)
+    // UV-space jitter (screenUV Y-down): negate dy.
+    march.temporalJitter.value.set(dx, this.temporalUpscale ? -dy : 0)
+
+    // New Matrix4 each frame so uniform upload cannot skip in-place edits.
+    const invProj = new Matrix4().copy(camera.projectionMatrix)
+    if (this.temporalUpscale) {
+      invProj.elements[8] += dx * 2
+      invProj.elements[9] += dy * 2
+    }
+    invProj.invert()
+    march.inverseProjectionMatrix.value = invProj
 
     const previousProjection =
       this.previousProjectionMatrix ?? camera.projectionMatrix
     const previousView = this.previousViewMatrix ?? camera.matrixWorldInverse
-    march.reprojectionMatrix.value.copy(previousProjection)
+    const reprojection = new Matrix4().copy(previousProjection)
     if (this.temporalUpscale) {
-      march.reprojectionMatrix.value.elements[8] += dx * 2
-      march.reprojectionMatrix.value.elements[9] -= dy * 2
+      reprojection.elements[8] += dx * 2
+      reprojection.elements[9] += dy * 2
     }
-    march.reprojectionMatrix.value.multiply(previousView)
-    march.viewReprojectionMatrix.value
-      .copy(march.reprojectionMatrix.value)
+    reprojection.multiply(previousView)
+    march.reprojectionMatrix.value = reprojection
+    march.viewReprojectionMatrix.value = new Matrix4()
+      .copy(reprojection)
       .multiply(camera.matrixWorld)
   }
 
@@ -351,6 +378,15 @@ export class CloudsMarchNode extends TempNode {
 
   override updateBefore(frame: NodeFrame): void {
     this.render(frame)
+  }
+
+  /**
+   * Mark the march material dirty so shadow buffer / graph rebinds take effect.
+   */
+  invalidateMaterial(): this {
+    this.material.fragmentNode = new CloudsMarchColorNode(this)
+    this.material.needsUpdate = true
+    return this
   }
 
   override setup(builder: NodeBuilder): unknown {

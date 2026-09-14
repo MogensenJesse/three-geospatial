@@ -39,6 +39,8 @@ export class LocalWeatherNode extends ProceduralTextureNode {
     return 'LocalWeatherNode'
   }
 
+  protected override enableMipmaps = true
+
   constructor(size = new Vector2().setScalar(512)) {
     super(size)
   }

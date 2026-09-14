@@ -1,23 +1,36 @@
 // src/webgpu/CloudsNode.ts
 
 import { Vector2, Vector3 } from 'three'
+import { Fn, screenUV, vec4 } from 'three/tsl'
 import {
   NodeUpdateType,
   TempNode,
   type NodeBuilder,
   type NodeFrame,
+  type Texture3DNode,
   type TextureNode
 } from 'three/webgpu'
 
+import { CloudLayer } from '../CloudLayer'
 import { CloudLayers } from '../CloudLayers'
 import {
-  CloudsEnvironment,
-  type CloudsEnvironmentOptions
-} from './CloudsEnvironment'
+  cloneQualitySettings,
+  qualityPresets,
+  type CloudQualitySettings,
+  type PhaseFunctionMode,
+  type QualityPreset
+} from '../qualityPresets'
+import { CloudsEnvironment } from './CloudsEnvironment'
+import {
+  resolveCloudsOptions,
+  type CloudsFacadeOptions,
+  type CloudsOptions
+} from './CloudsOptions'
 import { CloudShapeDetailNode } from './CloudShapeDetailNode'
 import { CloudShapeNode } from './CloudShapeNode'
 import { CloudsMarchNode } from './CloudsMarchNode'
 import { CloudsResolveNode } from './CloudsResolveNode'
+import type { Node } from './internal/node'
 import { LocalWeatherNode } from './LocalWeatherNode'
 import { CloudLayerParameterNodes, CloudParameterNodes } from './parameters'
 import { ShadowDebugNode } from './ShadowDebugNode'
@@ -25,9 +38,21 @@ import { ShadowMarchNode } from './ShadowMarchNode'
 import { TurbulenceNode } from './TurbulenceNode'
 import { updateCloudLayerParameters } from './updateCloudLayerParameters'
 
+/** Full-screen diagnostic views for the demo / host tooling. */
+export type CloudsDebugOutput =
+  | 'none'
+  | 'clouds'
+  | 'velocity'
+  | 'shadow-cascade-0'
+  | 'shadow-cascade-1'
+  | 'shadow-cascade-2'
+  | 'optical-depth-local'
+  | 'optical-depth-bsm'
+  | 'no-shadow'
+
 /**
  * Orchestrates procedural textures + layer packing + clouds march. Exposes an
- * overlay texture for {@link AerialPerspectiveNode.overlayNode}.
+ * overlay texture for composition (or a diagnostic view when selected).
  */
 export class CloudsNode extends TempNode {
   static override get type(): string {
@@ -47,37 +72,33 @@ export class CloudsNode extends TempNode {
   readonly shapeVelocity = new Vector3()
   readonly shapeDetailVelocity = new Vector3()
 
-  private readonly localWeather: LocalWeatherNode
-  private readonly shape: CloudShapeNode
-  private readonly shapeDetail: CloudShapeDetailNode
-  private readonly turbulence: TurbulenceNode
+  private localWeather: LocalWeatherNode | null = null
+  private shape: CloudShapeNode | null = null
+  private shapeDetail: CloudShapeDetailNode | null = null
+  private turbulence: TurbulenceNode | null = null
+
+  private ownsLocalWeather = false
+  private ownsShape = false
+  private ownsShapeDetail = false
+  private ownsTurbulence = false
+
   private readonly textureNode: TextureNode
   private readonly outputSize = new Vector2()
   private frame = 0
+  private _debugOutput: CloudsDebugOutput = 'none'
+  /** CPU ms around each pass (GPU work may complete later). */
+  readonly lastPassTiming = { shadow: 0, march: 0, resolve: 0, total: 0 }
 
   coverage = 0.3
 
-  constructor(options: CloudsEnvironment | CloudsEnvironmentOptions) {
+  private qualityPreset: QualityPreset = 'high'
+
+  constructor(options: CloudsOptions) {
     super('vec4')
     this.updateBeforeType = NodeUpdateType.FRAME
-    this.environment =
-      options instanceof CloudsEnvironment
-        ? options
-        : new CloudsEnvironment(options)
 
-    this.localWeather = new LocalWeatherNode()
-    this.shape = new CloudShapeNode()
-    this.shapeDetail = new CloudShapeDetailNode()
-    this.turbulence = new TurbulenceNode()
-
-    this.parameters
-      .setLocalWeatherTexture(this.localWeather.getTextureNode())
-      .setShapeTexture(this.shape.getTextureNode())
-      .setShapeDetailTexture(this.shapeDetail.getTextureNode())
-      .setTurbulenceTexture(this.turbulence.getTextureNode())
-
-    this.parameters.shapeDetailEnabled.value = false
-    this.parameters.turbulenceEnabled.value = false
+    const { environment, facade } = resolveCloudsOptions(options)
+    this.environment = environment
 
     this.shadowNode = new ShadowMarchNode(
       this.environment,
@@ -92,7 +113,8 @@ export class CloudsNode extends TempNode {
     this.marchNode.shadow = this.shadowNode.shadow
     // Live array: ShadowMarchNode rebuilds the resolve (and its texture nodes)
     // when the cascade count changes, so don't snapshot the array here.
-    this.marchNode.shadowBuffers = this.shadowNode.getBufferNodes()
+    this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
+      this.marchNode.shadowBuffers = null
     this.resolveNode = new CloudsResolveNode(
       this.marchNode.getTextureNode(),
       this.marchNode.getVelocityTextureNode()
@@ -101,7 +123,226 @@ export class CloudsNode extends TempNode {
     this.shadowDebugNode = new ShadowDebugNode(this.shadowNode.getBufferNodes())
     this.textureNode = this.resolveNode.getTextureNode()
 
+    this.installDefaultProcedurals(facade)
+    this.applyFacadeOptions(facade)
+
     updateCloudLayerParameters(this.layerParameters, this.cloudLayers)
+    if (facade.qualityPreset != null) {
+      this.qualityPreset = facade.qualityPreset
+      this.applyQualitySettings(qualityPresets[facade.qualityPreset])
+    } else {
+      this.applyQualitySettings(qualityPresets.high)
+    }
+    this.applyPostQualityFacade(facade)
+  }
+
+  private installDefaultProcedurals(facade: CloudsFacadeOptions): void {
+    if (facade.localWeatherTexture !== undefined) {
+      this.setLocalWeatherTexture(facade.localWeatherTexture)
+    } else {
+      this.localWeather = new LocalWeatherNode()
+      this.ownsLocalWeather = true
+      this.parameters.setLocalWeatherTexture(this.localWeather.getTextureNode())
+    }
+
+    if (facade.shapeTexture !== undefined) {
+      this.setShapeTexture(facade.shapeTexture)
+    } else {
+      this.shape = new CloudShapeNode()
+      this.ownsShape = true
+      this.parameters.setShapeTexture(this.shape.getTextureNode())
+    }
+
+    if (facade.shapeDetailTexture !== undefined) {
+      this.setShapeDetailTexture(facade.shapeDetailTexture)
+    } else {
+      this.shapeDetail = new CloudShapeDetailNode()
+      this.ownsShapeDetail = true
+      this.parameters.setShapeDetailTexture(this.shapeDetail.getTextureNode())
+    }
+
+    if (facade.turbulenceTexture !== undefined) {
+      this.setTurbulenceTexture(facade.turbulenceTexture)
+    } else {
+      this.turbulence = new TurbulenceNode()
+      this.ownsTurbulence = true
+      this.parameters.setTurbulenceTexture(this.turbulence.getTextureNode())
+    }
+
+    // Defaults match prior constructor (detail/turbulence off until quality).
+    this.parameters.shapeDetailEnabled.value = false
+    this.parameters.turbulenceEnabled.value = false
+  }
+
+  private applyFacadeOptions(facade: CloudsFacadeOptions): void {
+    if (facade.cloudLayers != null) {
+      this.cloudLayers.length = 0
+      for (const layer of facade.cloudLayers) {
+        this.cloudLayers.push(
+          layer instanceof CloudLayer ? layer.clone() : new CloudLayer(layer)
+        )
+      }
+    }
+
+    if (facade.stbnTexture !== undefined) {
+      this.setStbnTexture(facade.stbnTexture)
+    }
+    if (facade.coverage != null) this.coverage = facade.coverage
+    if (facade.scatteringCoefficient != null) {
+      this.scatteringCoefficient = facade.scatteringCoefficient
+    }
+    if (facade.absorptionCoefficient != null) {
+      this.absorptionCoefficient = facade.absorptionCoefficient
+    }
+    if (facade.turbulenceDisplacement != null) {
+      this.turbulenceDisplacement = facade.turbulenceDisplacement
+    }
+    if (facade.shapeDetail != null) this.shapeDetailEnabled = facade.shapeDetail
+    if (facade.turbulence != null) this.turbulenceEnabled = facade.turbulence
+    if (facade.localWeatherRepeat != null) {
+      this.localWeatherRepeat.copy(facade.localWeatherRepeat)
+    }
+    if (facade.localWeatherOffset != null) {
+      this.localWeatherOffset.copy(facade.localWeatherOffset)
+    }
+    if (facade.shapeRepeat != null) this.shapeRepeat.copy(facade.shapeRepeat)
+    if (facade.shapeOffset != null) this.shapeOffset.copy(facade.shapeOffset)
+    if (facade.shapeDetailRepeat != null) {
+      this.shapeDetailRepeat.copy(facade.shapeDetailRepeat)
+    }
+    if (facade.shapeDetailOffset != null) {
+      this.shapeDetailOffset.copy(facade.shapeDetailOffset)
+    }
+    if (facade.turbulenceRepeat != null) {
+      this.turbulenceRepeat.copy(facade.turbulenceRepeat)
+    }
+    if (facade.localWeatherVelocity != null) {
+      this.localWeatherVelocity.copy(facade.localWeatherVelocity)
+    }
+    if (facade.shapeVelocity != null) {
+      this.shapeVelocity.copy(facade.shapeVelocity)
+    }
+    if (facade.shapeDetailVelocity != null) {
+      this.shapeDetailVelocity.copy(facade.shapeDetailVelocity)
+    }
+
+  }
+
+  private applyPostQualityFacade(facade: CloudsFacadeOptions): void {
+    if (facade.resolutionScale != null) {
+      this.resolutionScale = facade.resolutionScale
+    }
+    if (facade.temporalUpscale != null) {
+      this.temporalUpscale = facade.temporalUpscale
+    }
+    if (facade.temporalAlpha != null) this.temporalAlpha = facade.temporalAlpha
+    if (facade.varianceGamma != null) this.varianceGamma = facade.varianceGamma
+    if (facade.secondaryIterationCount != null) {
+      this.secondaryIterationCount = facade.secondaryIterationCount
+    }
+    if (facade.powderScale != null) this.powderScale = facade.powderScale
+    if (facade.powderExponent != null) this.powderExponent = facade.powderExponent
+    if (facade.groundBounceScale != null) {
+      this.groundBounceScale = facade.groundBounceScale
+    }
+    if (facade.groundIterationCount != null) {
+      this.groundIterationCount = facade.groundIterationCount
+    }
+    if (facade.phaseFunctionMode != null) {
+      this.phaseFunctionMode = facade.phaseFunctionMode
+    }
+    if (facade.shadowEnabled != null) this.shadowEnabled = facade.shadowEnabled
+    if (facade.shadowMapSize != null) this.shadowMapSize = facade.shadowMapSize
+    if (facade.shadowCascadeCount != null) {
+      this.shadowCascadeCount = facade.shadowCascadeCount
+    }
+    if (facade.shadowFilterRadius != null) {
+      this.shadowFilterRadius = facade.shadowFilterRadius
+    }
+    if (facade.shadowTemporalAlpha != null) {
+      this.shadowTemporalAlpha = facade.shadowTemporalAlpha
+    }
+    if (facade.shadowTemporalGamma != null) {
+      this.shadowTemporalGamma = facade.shadowTemporalGamma
+    }
+  }
+
+  getQualityPreset(): QualityPreset {
+    return this.qualityPreset
+  }
+
+  setQualityPreset(preset: QualityPreset): this {
+    this.qualityPreset = preset
+    return this.applyQualitySettings(qualityPresets[preset])
+  }
+
+  applyQualitySettings(settings: CloudQualitySettings): this {
+    const next = cloneQualitySettings(settings)
+    const { clouds: cloudQuality, shadow: shadowQuality } = next
+    const previousCascadeCount = this.shadowNode.shadowMaps.cascadeCount
+    const previousMapSize = this.shadowNode.shadowMaps.mapSize.x
+
+    this.resolutionScale = next.resolutionScale
+    this.temporalUpscale = next.temporalUpscale
+    // Shared uniforms drive cloud + shadow sampling. Enable if either the
+    // cloud or shadow preset requests detail/turbulence (Phase 5).
+    this.parameters.shapeDetailEnabled.value =
+      next.shapeDetail || shadowQuality.shapeDetail
+    this.parameters.turbulenceEnabled.value =
+      next.turbulence || shadowQuality.turbulence
+
+    const march = this.marchNode.march
+    march.multiScatteringOctaves.value = cloudQuality.multiScatteringOctaves
+    march.maxIterationCount.value = cloudQuality.maxIterationCount
+    march.minStepSize.value = cloudQuality.minStepSize
+    march.maxStepSize.value = cloudQuality.maxStepSize
+    march.maxRayDistance.value = cloudQuality.maxRayDistance
+    march.perspectiveStepScale.value = cloudQuality.perspectiveStepScale
+    march.minDensity.value = cloudQuality.minDensity
+    march.minExtinction.value = cloudQuality.minExtinction
+    march.minTransmittance.value = cloudQuality.minTransmittance
+    march.maxIterationCountToSun.value = cloudQuality.secondaryIterationCount
+    march.minSecondaryStepSize.value = cloudQuality.minSecondaryStepSize
+    march.secondaryStepScale.value = cloudQuality.secondaryStepScale
+
+    march.powderScale.value = cloudQuality.powderScale
+    march.powderExponent.value = cloudQuality.powderExponent
+    march.groundBounceScale.value = cloudQuality.groundBounceScale
+    march.maxIterationCountToGround.value = cloudQuality.groundIterationCount
+    march.phaseFunctionMode.value =
+      cloudQuality.phaseFunctionMode === 'accurate' ? 1 : 0
+
+    const shadowMarch = this.shadowNode.march
+    shadowMarch.maxIterationCount.value = shadowQuality.maxIterationCount
+    shadowMarch.minStepSize.value = shadowQuality.minStepSize
+    shadowMarch.maxStepSize.value = shadowQuality.maxStepSize
+    shadowMarch.minDensity.value = shadowQuality.minDensity
+    shadowMarch.minExtinction.value = shadowQuality.minExtinction
+    shadowMarch.minTransmittance.value = shadowQuality.minTransmittance
+
+    this.shadowNode.setMapSize(shadowQuality.mapSize.x)
+    this.shadowNode.setCascadeCount(shadowQuality.cascadeCount)
+    this.shadowNode.resolveNode.temporalAlpha.value = shadowQuality.temporalAlpha
+    this.shadowNode.resolveNode.varianceGamma.value = shadowQuality.temporalGamma
+
+    if (
+      shadowQuality.cascadeCount !== previousCascadeCount ||
+      shadowQuality.mapSize.x !== previousMapSize
+    ) {
+      this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
+      this.marchNode.shadowBuffers = null
+      this.marchNode.invalidateMaterial()
+      this.shadowDebugNodeDisposeRebuild()
+    }
+
+    this.shadowNode.resolveNode.reset()
+    this.resetTemporalHistory()
+    return this
+  }
+
+  private shadowDebugNodeDisposeRebuild(): void {
+    // ShadowDebugNode reads sources at setup; cascade rebuild already mutates
+    // the live array referenced by the constructor. Nothing else required.
   }
 
   get shadowMapNode(): ShadowMarchNode {
@@ -112,9 +353,103 @@ export class CloudsNode extends TempNode {
     return this.textureNode
   }
 
+  getVelocityTextureNode(): TextureNode {
+    return this.marchNode.getVelocityTextureNode()
+  }
+
+  /** Host-supplied or procedural weather texture. */
+  setLocalWeatherTexture(node: TextureNode | null): this {
+    if (this.ownsLocalWeather && this.localWeather != null) {
+      this.localWeather.dispose()
+    }
+    this.localWeather = null
+    this.ownsLocalWeather = false
+    this.parameters.setLocalWeatherTexture(node)
+    this.resetTemporalHistory()
+    return this
+  }
+
+  setShapeTexture(node: Texture3DNode | null): this {
+    if (this.ownsShape && this.shape != null) {
+      this.shape.dispose()
+    }
+    this.shape = null
+    this.ownsShape = false
+    this.parameters.setShapeTexture(node)
+    this.resetTemporalHistory()
+    return this
+  }
+
+  setShapeDetailTexture(node: Texture3DNode | null): this {
+    if (this.ownsShapeDetail && this.shapeDetail != null) {
+      this.shapeDetail.dispose()
+    }
+    this.shapeDetail = null
+    this.ownsShapeDetail = false
+    this.parameters.setShapeDetailTexture(node)
+    this.resetTemporalHistory()
+    return this
+  }
+
+  setTurbulenceTexture(node: TextureNode | null): this {
+    if (this.ownsTurbulence && this.turbulence != null) {
+      this.turbulence.dispose()
+    }
+    this.turbulence = null
+    this.ownsTurbulence = false
+    this.parameters.setTurbulenceTexture(node)
+    this.resetTemporalHistory()
+    return this
+  }
+
+  /** Optional 3D blue-noise / STBN texture for march jitter (hash fallback). */
+  setStbnTexture(node: Texture3DNode | null): this {
+    this.parameters.setStbnTexture(node)
+    return this
+  }
+
   /** Resolved BSM cascade textures (cascade 0 first), live across rebuilds. */
   getShadowBufferNodes(): TextureNode[] {
     return this.shadowNode.getBufferNodes()
+  }
+
+  get debugOutput(): CloudsDebugOutput {
+    return this._debugOutput
+  }
+
+  set debugOutput(value: CloudsDebugOutput) {
+    if (value === this._debugOutput) return
+    this._debugOutput = value
+    this.applyDebugMarchMode()
+    this.resetTemporalHistory()
+    // setup() return value changed — force the pipeline to rebuild this node.
+    ;(this as { needsUpdate?: boolean }).needsUpdate = true
+  }
+
+  private applyDebugMarchMode(): void {
+    const march = this.marchNode.march
+    switch (this._debugOutput) {
+      case 'optical-depth-local':
+        march.shadowDebugOpticalDepth.value = -3
+        break
+      case 'optical-depth-bsm':
+        march.shadowDebugOpticalDepth.value = -4
+        break
+      case 'no-shadow':
+        march.shadowDebugOpticalDepth.value = -2
+        break
+      default:
+        march.shadowDebugOpticalDepth.value = -1
+        break
+    }
+  }
+
+  /**
+   * Prefer putting this `CloudsNode` on the pipeline when debugging so
+   * {@link updateBefore} keeps running. Returns `null` for normal compositing.
+   */
+  getDebugViewNode(): CloudsNode | null {
+    return this._debugOutput === 'none' ? null : this
   }
 
   get depthNode(): TextureNode | null {
@@ -156,12 +491,220 @@ export class CloudsNode extends TempNode {
     this.resolveNode.temporalAlpha.value = value
   }
 
+  /** When false, cloud temporal resolve never reuses history (debug). */
+  get temporalHistoryEnabled(): boolean {
+    return this.resolveNode.historyEnabled
+  }
+
+  set temporalHistoryEnabled(value: boolean) {
+    if (value !== this.resolveNode.historyEnabled) {
+      this.resolveNode.historyEnabled = value
+      this.resetTemporalHistory()
+    }
+  }
+
+  getMarchRenderSize(target: Vector2): Vector2 {
+    return this.marchNode.getRenderSize(target)
+  }
+
+  getMarchOutputSize(target: Vector2): Vector2 {
+    return this.marchNode.getOutputSize(target)
+  }
+
   get varianceGamma(): number {
     return this.resolveNode.varianceGamma.value
   }
 
   set varianceGamma(value: number) {
     this.resolveNode.varianceGamma.value = value
+  }
+
+  get shapeDetailEnabled(): boolean {
+    return Boolean(this.parameters.shapeDetailEnabled.value)
+  }
+
+  set shapeDetailEnabled(value: boolean) {
+    this.parameters.shapeDetailEnabled.value = value
+  }
+
+  get turbulenceEnabled(): boolean {
+    return Boolean(this.parameters.turbulenceEnabled.value)
+  }
+
+  set turbulenceEnabled(value: boolean) {
+    this.parameters.turbulenceEnabled.value = value
+  }
+
+  get scatteringCoefficient(): number {
+    return this.parameters.scatteringCoefficient.value
+  }
+
+  set scatteringCoefficient(value: number) {
+    this.parameters.scatteringCoefficient.value = value
+  }
+
+  get absorptionCoefficient(): number {
+    return this.parameters.absorptionCoefficient.value
+  }
+
+  set absorptionCoefficient(value: number) {
+    this.parameters.absorptionCoefficient.value = value
+  }
+
+  get turbulenceDisplacement(): number {
+    return this.parameters.turbulenceDisplacement.value
+  }
+
+  set turbulenceDisplacement(value: number) {
+    this.parameters.turbulenceDisplacement.value = value
+  }
+
+  get localWeatherRepeat(): Vector2 {
+    return this.parameters.localWeatherRepeat.value
+  }
+
+  get localWeatherOffset(): Vector2 {
+    return this.parameters.localWeatherOffset.value
+  }
+
+  get shapeRepeat(): Vector3 {
+    return this.parameters.shapeRepeat.value
+  }
+
+  get shapeOffset(): Vector3 {
+    return this.parameters.shapeOffset.value
+  }
+
+  get shapeDetailRepeat(): Vector3 {
+    return this.parameters.shapeDetailRepeat.value
+  }
+
+  get shapeDetailOffset(): Vector3 {
+    return this.parameters.shapeDetailOffset.value
+  }
+
+  get turbulenceRepeat(): Vector2 {
+    return this.parameters.turbulenceRepeat.value
+  }
+
+  get secondaryIterationCount(): number {
+    return this.marchNode.march.maxIterationCountToSun.value
+  }
+
+  set secondaryIterationCount(value: number) {
+    this.marchNode.march.maxIterationCountToSun.value = value
+  }
+
+  get powderScale(): number {
+    return this.marchNode.march.powderScale.value
+  }
+
+  set powderScale(value: number) {
+    this.marchNode.march.powderScale.value = value
+  }
+
+  get powderExponent(): number {
+    return this.marchNode.march.powderExponent.value
+  }
+
+  set powderExponent(value: number) {
+    this.marchNode.march.powderExponent.value = value
+  }
+
+  get groundBounceScale(): number {
+    return this.marchNode.march.groundBounceScale.value
+  }
+
+  set groundBounceScale(value: number) {
+    this.marchNode.march.groundBounceScale.value = value
+  }
+
+  get groundIterationCount(): number {
+    return this.marchNode.march.maxIterationCountToGround.value
+  }
+
+  set groundIterationCount(value: number) {
+    this.marchNode.march.maxIterationCountToGround.value = value
+  }
+
+  get phaseFunctionMode(): PhaseFunctionMode {
+    return this.marchNode.march.phaseFunctionMode.value === 1
+      ? 'accurate'
+      : 'approximate'
+  }
+
+  set phaseFunctionMode(value: PhaseFunctionMode) {
+    this.marchNode.march.phaseFunctionMode.value = value === 'accurate' ? 1 : 0
+  }
+
+  get shadowEnabled(): boolean {
+    return this.shadowNode.enabled
+  }
+
+  set shadowEnabled(value: boolean) {
+    this.shadowNode.enabled = value
+    this.shadowNode.shadow.enabled.value = value ? 1 : 0
+    this.marchNode.shadowAtlas = value ? this.shadowNode.getAtlasNode() : null
+    this.marchNode.shadowBuffers = null
+    this.marchNode.invalidateMaterial()
+    this.shadowNode.resolveNode.reset()
+    this.resetTemporalHistory()
+  }
+
+  get shadowMapSize(): number {
+    return this.shadowNode.shadowMaps.mapSize.x
+  }
+
+  set shadowMapSize(value: number) {
+    const previous = this.shadowNode.shadowMaps.mapSize.x
+    this.shadowNode.setMapSize(value)
+    if (value !== previous) {
+      this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
+      this.marchNode.shadowBuffers = null
+      this.marchNode.invalidateMaterial()
+      this.shadowNode.resolveNode.reset()
+      this.resetTemporalHistory()
+    }
+  }
+
+  get shadowCascadeCount(): number {
+    return this.shadowNode.shadowMaps.cascadeCount
+  }
+
+  set shadowCascadeCount(value: number) {
+    const previous = this.shadowNode.shadowMaps.cascadeCount
+    this.shadowNode.setCascadeCount(value)
+    if (value !== previous) {
+      this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
+      this.marchNode.shadowBuffers = null
+      this.marchNode.invalidateMaterial()
+      this.shadowNode.resolveNode.reset()
+      this.resetTemporalHistory()
+    }
+  }
+
+  get shadowFilterRadius(): number {
+    return this.shadowNode.shadow.maxShadowFilterRadius.value
+  }
+
+  set shadowFilterRadius(value: number) {
+    this.shadowNode.shadow.maxShadowFilterRadius.value = value
+  }
+
+  get shadowTemporalAlpha(): number {
+    return this.shadowNode.resolveNode.temporalAlpha.value
+  }
+
+  set shadowTemporalAlpha(value: number) {
+    this.shadowNode.resolveNode.temporalAlpha.value = value
+  }
+
+  get shadowTemporalGamma(): number {
+    return this.shadowNode.resolveNode.varianceGamma.value
+  }
+
+  set shadowTemporalGamma(value: number) {
+    this.shadowNode.resolveNode.varianceGamma.value = value
   }
 
   resetTemporalHistory(): this {
@@ -192,26 +735,58 @@ export class CloudsNode extends TempNode {
     updateCloudLayerParameters(this.layerParameters, this.cloudLayers)
     this.marchNode.frame = this.frame
     this.resolveNode.frame.value = this.frame
+    const t0 = performance.now()
     this.shadowNode.updateBefore(frame)
+    const t1 = performance.now()
     this.marchNode.render(frame, false)
     this.marchNode.getOutputSize(this.outputSize)
+    const t2 = performance.now()
     this.resolveNode.setSize(this.outputSize.x, this.outputSize.y)
     this.resolveNode.render(frame)
     this.marchNode.commitReprojection(frame)
+    const t3 = performance.now()
+    this.lastPassTiming.shadow = t1 - t0
+    this.lastPassTiming.march = t2 - t1
+    this.lastPassTiming.resolve = t3 - t2
+    this.lastPassTiming.total = t3 - t0
     this.frame = (this.frame + 1) % 16
   }
 
   override setup(builder: NodeBuilder): unknown {
-    // Ensure procedural textures are built before the march samples them.
-    this.localWeather.build(builder)
-    this.shape.build(builder)
-    this.shapeDetail.build(builder)
-    this.turbulence.build(builder)
+    // Build only internally owned procedural generators.
+    this.localWeather?.build(builder)
+    this.shape?.build(builder)
+    this.shapeDetail?.build(builder)
+    this.turbulence?.build(builder)
     this.shadowNode.build(builder)
     this.marchNode.build(builder)
     this.resolveNode.build(builder)
-    // Sample the live temporal-resolve target.
-    return this.textureNode
+
+    // Diagnostics must return from this setup so CloudsNode stays in the graph
+    // and updateBefore keeps marching while the camera moves.
+    switch (this._debugOutput) {
+      case 'velocity': {
+        const velocityTex = this.marchNode.getVelocityTextureNode()
+        return Fn(() => {
+          const v = velocityTex.sample(screenUV)
+          return vec4(
+            v.r.mul(1e-4).clamp(0, 1),
+            v.g.mul(20).add(0.5).clamp(0, 1),
+            v.b.mul(20).add(0.5).clamp(0, 1),
+            1
+          )
+        })()
+      }
+      case 'shadow-cascade-0':
+        return new ShadowDebugNode(this.shadowNode.getBufferNodes(), 0)
+      case 'shadow-cascade-1':
+        return new ShadowDebugNode(this.shadowNode.getBufferNodes(), 1)
+      case 'shadow-cascade-2':
+        return new ShadowDebugNode(this.shadowNode.getBufferNodes(), 2)
+      default:
+        // none / clouds / optical-depth_* / no-shadow â†’ resolved cloud buffer
+        return this.textureNode
+    }
   }
 
   override dispose(): void {
@@ -219,14 +794,13 @@ export class CloudsNode extends TempNode {
     this.shadowDebugNode.dispose()
     this.resolveNode.dispose()
     this.marchNode.dispose()
-    this.localWeather.dispose()
-    this.shape.dispose()
-    this.shapeDetail.dispose()
-    this.turbulence.dispose()
+    if (this.ownsLocalWeather) this.localWeather?.dispose()
+    if (this.ownsShape) this.shape?.dispose()
+    if (this.ownsShapeDetail) this.shapeDetail?.dispose()
+    if (this.ownsTurbulence) this.turbulence?.dispose()
     super.dispose()
   }
 }
 
-export const clouds = (
-  options: CloudsEnvironment | CloudsEnvironmentOptions
-): CloudsNode => new CloudsNode(options)
+export const clouds = (options: CloudsOptions): CloudsNode =>
+  new CloudsNode(options)

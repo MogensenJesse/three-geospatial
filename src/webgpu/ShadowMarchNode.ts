@@ -109,6 +109,10 @@ export class ShadowMarchNode extends TempNode {
   enabled = true
 
   private renderTargets: RenderTarget[] = []
+  /** Horizontal atlas of resolved cascades for cheap march sampling. */
+  private atlasTarget: RenderTarget | null = null
+  private atlasNode: TextureNode | null = null
+  private readonly atlasDst = new Vector3()
   private readonly textureNodes: TextureNode[] = []
   private readonly velocityNodes: TextureNode[] = []
   private readonly materials: NodeMaterial[] = []
@@ -121,6 +125,8 @@ export class ShadowMarchNode extends TempNode {
   private readonly bufferNodes: TextureNode[] = []
   private rendererState?: RendererUtils.RendererState
   private readonly sunDirectionWorld = new Vector3()
+  /** NaN x means "no previous sample yet" (skip first-frame reset). */
+  private readonly previousSunDirection = new Vector3(Number.NaN, 0, 0)
   private mapSize: number
   /** Cascade matrices from the previous frame, for shadow-map reprojection. */
   private readonly previousShadowMatrices = Array.from(
@@ -210,6 +216,43 @@ export class ShadowMarchNode extends TempNode {
     }
 
     this.buildResolveNode(cascadeCount)
+    this.rebuildAtlas(cascadeCount, mapSize)
+  }
+
+  private rebuildAtlas(cascadeCount: number, mapSize: number): void {
+    this.atlasTarget?.dispose()
+    // Horizontal strip: [c0 | c1 | c2] — one sample texture for the march.
+    this.atlasTarget = new RenderTarget(mapSize * cascadeCount, mapSize, {
+      depthBuffer: false,
+      type: HalfFloatType,
+      format: RGBAFormat
+    })
+    this.atlasTarget.texture.minFilter = LinearFilter
+    this.atlasTarget.texture.magFilter = LinearFilter
+    this.atlasTarget.texture.generateMipmaps = false
+    this.atlasTarget.texture.name = 'CloudsShadowAtlas'
+    this.atlasNode = texture(this.atlasTarget.texture)
+  }
+
+  /** Single atlas texture for clouds-march BSM sampling. */
+  getAtlasNode(): TextureNode | null {
+    return this.atlasNode
+  }
+
+  private packAtlas(renderer: NonNullable<NodeFrame['renderer']>): void {
+    if (this.atlasTarget == null || this.atlasNode == null) return
+    // Ensure destination exists on the GPU before copyTextureToTexture.
+    const init = (renderer as { initTexture?: (t: import('three').Texture) => void }).initTexture
+    if (typeof init === 'function') {
+      init.call(renderer, this.atlasTarget.texture)
+    }
+    const mapSize = this.mapSize
+    const count = this.shadowMaps.cascadeCount
+    for (let i = 0; i < count; ++i) {
+      const src = this.resolveNode.getTextureNode(i).value
+      this.atlasDst.set(i * mapSize, 0, 0)
+      renderer.copyTextureToTexture(src, this.atlasTarget.texture, null, this.atlasDst)
+    }
   }
 
   /** Raw cascade color texture at `index` (cascade 0 first). */
@@ -234,6 +277,7 @@ export class ShadowMarchNode extends TempNode {
         target.setSize(size, size)
       }
       this.resolveNode.setSize(size)
+      this.resolveNode.reset()
       this.shadowMaps.mapSize.set(size, size)
       this.shadow.shadowTexelSize.value.set(1 / size, 1 / size)
       this.march.resolution.value.set(size, size)
@@ -266,6 +310,17 @@ export class ShadowMarchNode extends TempNode {
 
     const { renderer } = frame
     this.sunDirectionWorld.copy(this.environment.sunDirection).normalize()
+
+    // Clear temporal history after discontinuous sun jumps (Phase 5).
+    if (
+      Number.isNaN(this.previousSunDirection.x) ||
+      this.previousSunDirection.distanceToSquared(this.sunDirectionWorld) > 1e-4
+    ) {
+      if (!Number.isNaN(this.previousSunDirection.x)) {
+        this.resolveNode.reset()
+      }
+      this.previousSunDirection.copy(this.sunDirectionWorld)
+    }
 
     // Keep the reconstructed sun ray above the complete flat slab, including
     // low-angle lighting. Cascade coverage remains camera-frustum based.
@@ -320,6 +375,7 @@ export class ShadowMarchNode extends TempNode {
 
     restoreRendererState(renderer, this.rendererState)
     this.resolveNode.render(frame)
+    if (renderer != null) this.packAtlas(renderer)
   }
 
   override updateBefore(frame: NodeFrame): void {

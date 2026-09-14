@@ -55,6 +55,8 @@ export class TurbulenceNode extends ProceduralTextureNode {
     return 'TurbulenceNode'
   }
 
+  protected override enableMipmaps = true
+
   constructor(size = new Vector2().setScalar(128)) {
     super(size)
   }
