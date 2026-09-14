@@ -185,10 +185,8 @@ export interface SampleShadowOpticalDepthContext {
   environment: CloudsEnvironment
   layers: CloudLayerParameterNodes
   shadow: ShadowParameterNodes
-  /** Per-cascade textures (legacy) or unused when shadowAtlas is set. */
-  shadowTextures: readonly TextureNode[]
-  /** Horizontal atlas [c0|c1|c2] — preferred WebGPU march path (one bind). */
-  shadowAtlas?: TextureNode | null
+  /** Horizontal atlas [c0|c1|c2] (one bind for march + host materials). */
+  shadowAtlas: TextureNode
   debugMode?: Node<'float'>
   viewMatrix: Node<'mat4'>
 }
@@ -200,7 +198,7 @@ export function sampleShadowOpticalDepth(
   distanceOffset: Node<'float'>,
   jitter: Node<'float'>
 ): Node<'float'> {
-  const { environment, layers, shadow, shadowTextures } = context
+  const { environment, layers, shadow, shadowAtlas } = context
   const worldScale = environment.worldUnitsPerMeterNode
   const sunDirection = environment.sunDirectionNode.normalize()
   const topY = environment.mapOriginNode.y.add(
@@ -219,11 +217,11 @@ export function sampleShadowOpticalDepth(
 
   If(distanceToTopWorld.greaterThan(0), () => {
     const viewPosition = context.viewMatrix.mul(vec4(positionWorld, 1))
-    const cascadeIndex = getFadedCascadeIndex(
+    // Hard cascade pick — fade dither (screen or world-hash) popped when orbiting.
+    const cascadeIndex = getCascadeIndex(
       viewPosition.z,
       shadow.shadowCameraNear,
       shadow.shadowFar,
-      jitter,
       shadow.shadowIntervals.element(int(0)),
       shadow.shadowIntervals.element(int(1)),
       shadow.shadowIntervals.element(int(2)),
@@ -248,48 +246,21 @@ export function sampleShadowOpticalDepth(
             remapClamp(sunDirection.y, 0.1, 0)
           )
 
-          const atlas = context.shadowAtlas
           const cascadeCount = shadow.cascadeCount
           const readAt = (sampleUv: Node<'vec2'>): Node<'float'> => {
-            if (atlas != null) {
-              // Horizontal atlas: u = (cascade + u) / N
-              // Must use float() — int cascadeCount would truncate U to tile edges
-              // (looks like huge strokes that jump when cascades change).
-              const u = sampleUv.x.clamp(0, 1)
-              const v = sampleUv.y.clamp(0, 1)
-              const atlasUv = vec2(
-                float(cascadeIndex).add(u).div(float(cascadeCount)),
-                v
-              )
-              return readShadowOpticalDepth(
-                atlas.sample(atlasUv),
-                distanceToTop,
-                distanceOffset
-              )
-            }
-            // Legacy multi-texture path (debug / fallback).
-            const value = float(0).toVar()
-            If(cascadeIndex.equal(0), () => {
-              value.assign(
-                readShadowOpticalDepth(
-                  shadowTextures[0].sample(sampleUv),
-                  distanceToTop,
-                  distanceOffset
-                )
-              )
-            })
-            for (let i = 1; i < shadowTextures.length; ++i) {
-              If(cascadeIndex.equal(i), () => {
-                value.assign(
-                  readShadowOpticalDepth(
-                    shadowTextures[i].sample(sampleUv),
-                    distanceToTop,
-                    distanceOffset
-                  )
-                )
-              })
-            }
-            return value
+            // Horizontal atlas: u = (cascade + u) / N — use float() so U is not
+            // truncated to tile edges (int cascadeCount would cause stroke artifacts).
+            const u = sampleUv.x.clamp(0, 1)
+            const v = sampleUv.y.clamp(0, 1)
+            const atlasUv = vec2(
+              float(cascadeIndex).add(u).div(float(cascadeCount)),
+              v
+            )
+            return readShadowOpticalDepth(
+              shadowAtlas.sample(atlasUv),
+              distanceToTop,
+              distanceOffset
+            )
           }
 
           const samplePCF = (
@@ -321,20 +292,11 @@ export function sampleShadowOpticalDepth(
           const debugMode = context.debugMode
           if (debugMode != null) {
             const raw = (channel: 'r' | 'g' | 'b' | 'a'): Node<'float'> => {
-              if (atlas != null) {
-                const atlasUv = vec2(
-                  float(cascadeIndex).add(uv.x.clamp(0, 1)).div(float(cascadeCount)),
-                  uv.y.clamp(0, 1)
-                )
-                return atlas.sample(atlasUv)[channel]
-              }
-              let value = shadowTextures[0].sample(uv)[channel]
-              for (let i = 1; i < shadowTextures.length; ++i) {
-                value = cascadeIndex
-                  .equal(i)
-                  .select(shadowTextures[i].sample(uv)[channel], value)
-              }
-              return value
+              const atlasUv = vec2(
+                float(cascadeIndex).add(uv.x.clamp(0, 1)).div(float(cascadeCount)),
+                uv.y.clamp(0, 1)
+              )
+              return shadowAtlas.sample(atlasUv)[channel]
             }
             opticalDepth.assign(
               debugMode

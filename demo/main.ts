@@ -30,6 +30,11 @@ import {
   type CloudsDebugOutput,
   type QualityPreset
 } from '../src'
+import {
+  accumulatePassTiming,
+  createPassTimingEma,
+  formatPassStats
+} from './passStats'
 import './styles.css'
 
 interface DemoRenderPipeline {
@@ -96,9 +101,7 @@ async function main(): Promise<void> {
   const temporalHistoryInput =
     requireElement<HTMLInputElement>('temporal-history')
   const passStats = requireElement<HTMLElement>('pass-stats')
-const passTimingEma = { shadow: 0, march: 0, resolve: 0, total: 0 }
-const ema = (prev: number, next: number, a = 0.1): number =>
-  prev === 0 ? next : prev * (1 - a) + next * a
+  const passTimingEma = createPassTimingEma()
   const sunDetailInput = requireElement<HTMLInputElement>('sun-detail')
   const sunDetailOutput = requireElement<HTMLOutputElement>('sun-detail-value')
   const marchIterationsInput =
@@ -249,26 +252,23 @@ const ema = (prev: number, next: number, a = 0.1): number =>
   }
 
   const updatePassStats = (): void => {
-    cloudNode.getMarchRenderSize(marchRenderSize)
-    cloudNode.getMarchOutputSize(marchOutputSize)
+    const diag = cloudNode.getPassDiagnostics(marchRenderSize, marchOutputSize)
     renderer.getDrawingBufferSize(drawingBufferSize)
-    const taau = cloudNode.temporalUpscale ? 'on' : 'off'
-    const hist = cloudNode.temporalHistoryEnabled ? 'on' : 'off'
-    const shadows = cloudNode.shadowEnabled ? 'on' : 'off'
-    const hv = cloudNode.resolveNode.historyValid.value
-    const tu = cloudNode.resolveNode.temporalUpscaleNode.value
-    const t = cloudNode.lastPassTiming
-    passTimingEma.shadow = ema(passTimingEma.shadow, t.shadow)
-    passTimingEma.march = ema(passTimingEma.march, t.march)
-    passTimingEma.resolve = ema(passTimingEma.resolve, t.resolve)
-    passTimingEma.total = ema(passTimingEma.total, t.total)
-    const ms = (n: number): string => n.toFixed(1)
-    passStats.textContent =
-      `March RT ${marchRenderSize.x}×${marchRenderSize.y} · ` +
-      `out ${marchOutputSize.x}×${marchOutputSize.y} · ` +
-      `draw ${drawingBufferSize.x}×${drawingBufferSize.y} · ` +
-      `TAAU ${taau} · tu ${tu} · hist ${hist} · hv ${hv} · shadows ${shadows} · ` +
-      `ms sh ${ms(passTimingEma.shadow)} / m ${ms(passTimingEma.march)} / r ${ms(passTimingEma.resolve)} / Σ ${ms(passTimingEma.total)}`
+    accumulatePassTiming(passTimingEma, diag.timing)
+    passStats.textContent = formatPassStats(
+      {
+        marchRender: diag.marchRender,
+        marchOutput: diag.marchOutput,
+        drawingBuffer: drawingBufferSize,
+        temporalUpscale: diag.temporalUpscale,
+        temporalUpscaleUniform: diag.temporalUpscaleUniform,
+        temporalHistory: diag.temporalHistory,
+        historyValid: diag.historyValid,
+        shadowEnabled: diag.shadowEnabled,
+        timing: diag.timing
+      },
+      passTimingEma
+    )
   }
 
   const syncQualityControlsFromNode = (): void => {
@@ -303,6 +303,9 @@ const ema = (prev: number, next: number, a = 0.1): number =>
   const updateQualityPreset = (): void => {
     cloudNode.setQualityPreset(qualityPresetInput.value as QualityPreset)
     syncQualityControlsFromNode()
+    // CloudShadowNode may have captured atlas at setup; force host rebind.
+    groundMaterial.needsUpdate = true
+    landmarkMaterial.needsUpdate = true
   }
 
   const updateCoverage = (): void => {

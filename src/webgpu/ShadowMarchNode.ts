@@ -38,6 +38,7 @@ import {
   shadowMipLevels,
   ShadowParameterNodes
 } from './shadowParameters'
+import { ShadowCascadeAtlas } from './ShadowCascadeAtlas'
 import { ShadowResolveNode } from './ShadowResolveNode'
 import {
   setupShadowMarchColor,
@@ -110,9 +111,7 @@ export class ShadowMarchNode extends TempNode {
 
   private renderTargets: RenderTarget[] = []
   /** Horizontal atlas of resolved cascades for cheap march sampling. */
-  private atlasTarget: RenderTarget | null = null
-  private atlasNode: TextureNode | null = null
-  private readonly atlasDst = new Vector3()
+  private readonly cascadeAtlas = new ShadowCascadeAtlas()
   private readonly textureNodes: TextureNode[] = []
   private readonly velocityNodes: TextureNode[] = []
   private readonly materials: NodeMaterial[] = []
@@ -220,39 +219,21 @@ export class ShadowMarchNode extends TempNode {
   }
 
   private rebuildAtlas(cascadeCount: number, mapSize: number): void {
-    this.atlasTarget?.dispose()
-    // Horizontal strip: [c0 | c1 | c2] — one sample texture for the march.
-    this.atlasTarget = new RenderTarget(mapSize * cascadeCount, mapSize, {
-      depthBuffer: false,
-      type: HalfFloatType,
-      format: RGBAFormat
-    })
-    this.atlasTarget.texture.minFilter = LinearFilter
-    this.atlasTarget.texture.magFilter = LinearFilter
-    this.atlasTarget.texture.generateMipmaps = false
-    this.atlasTarget.texture.name = 'CloudsShadowAtlas'
-    this.atlasNode = texture(this.atlasTarget.texture)
+    this.cascadeAtlas.rebuild(cascadeCount, mapSize)
   }
 
-  /** Single atlas texture for clouds-march BSM sampling. */
+  /** Single atlas texture for clouds-march / host BSM sampling. */
   getAtlasNode(): TextureNode | null {
-    return this.atlasNode
+    return this.cascadeAtlas.getTextureNode()
   }
 
   private packAtlas(renderer: NonNullable<NodeFrame['renderer']>): void {
-    if (this.atlasTarget == null || this.atlasNode == null) return
-    // Ensure destination exists on the GPU before copyTextureToTexture.
-    const init = (renderer as { initTexture?: (t: import('three').Texture) => void }).initTexture
-    if (typeof init === 'function') {
-      init.call(renderer, this.atlasTarget.texture)
-    }
-    const mapSize = this.mapSize
     const count = this.shadowMaps.cascadeCount
+    const sources = []
     for (let i = 0; i < count; ++i) {
-      const src = this.resolveNode.getTextureNode(i).value
-      this.atlasDst.set(i * mapSize, 0, 0)
-      renderer.copyTextureToTexture(src, this.atlasTarget.texture, null, this.atlasDst)
+      sources.push(this.resolveNode.getTextureNode(i).value)
     }
+    this.cascadeAtlas.pack(renderer, sources, this.mapSize)
   }
 
   /** Raw cascade color texture at `index` (cascade 0 first). */
@@ -281,6 +262,8 @@ export class ShadowMarchNode extends TempNode {
       this.shadowMaps.mapSize.set(size, size)
       this.shadow.shadowTexelSize.value.set(1 / size, 1 / size)
       this.march.resolution.value.set(size, size)
+      // Keep atlas tile size in sync with cascade RTs (preset switches).
+      this.rebuildAtlas(this.shadowMaps.cascadeCount, size)
     }
     return this
   }
@@ -397,6 +380,7 @@ export class ShadowMarchNode extends TempNode {
   }
 
   override dispose(): void {
+    this.cascadeAtlas.dispose()
     for (const target of this.renderTargets) {
       target.dispose()
     }

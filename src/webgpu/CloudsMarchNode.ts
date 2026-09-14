@@ -79,7 +79,6 @@ class CloudsMarchColorNode extends MRTNode {
       environment: this.owner.environment,
       march: this.owner.march,
       shadow: this.owner.shadow,
-      shadowBuffers: this.owner.shadowBuffers,
       shadowAtlas: this.owner.shadowAtlas,
       depthNode: this.owner.environment.sceneDepth
     })
@@ -111,7 +110,6 @@ export class CloudsMarchNode extends TempNode {
 
   /** Optional BSM inputs (Phase C). */
   shadow: ShadowParameterNodes | null = null
-  shadowBuffers: readonly TextureNode[] | null = null
   shadowAtlas: TextureNode | null = null
 
   private readonly renderTarget: RenderTarget

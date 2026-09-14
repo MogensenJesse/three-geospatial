@@ -36,10 +36,13 @@ export class CloudShadowNode extends TempNode {
   override setup(_builder: NodeBuilder): unknown {
     const { clouds, positionWorld, jitter } = this
     const { environment, layerParameters, shadowNode } = clouds
-    const shadowTextures = clouds.getShadowBufferNodes()
+    const shadowAtlas = clouds.getShadowAtlasNode()
 
     return Fn(() => {
       const transmittance = float(1).toVar()
+      if (shadowAtlas == null) {
+        return transmittance
+      }
 
       If(shadowNode.shadow.enabled.greaterThan(0), () => {
         const opticalDepth = sampleShadowOpticalDepth(
@@ -47,7 +50,7 @@ export class CloudShadowNode extends TempNode {
             environment,
             layers: layerParameters,
             shadow: shadowNode.shadow,
-            shadowTextures,
+            shadowAtlas,
             viewMatrix: viewMatrix(environment.camera)
           },
           positionWorld,

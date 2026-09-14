@@ -62,7 +62,7 @@ const highClouds: CloudMarchQuality = {
   minDensity: 1e-5,
   minExtinction: 1e-5,
   minTransmittance: 1e-2,
-  secondaryIterationCount: 1, // A/B: was 2 (WebGL low notes 1 helps a lot)
+  secondaryIterationCount: 1,
   minSecondaryStepSize: 100,
   secondaryStepScale: 2,
   groundIterationCount: 3,
@@ -83,7 +83,7 @@ const highShadow: CloudShadowQuality = {
   minTransmittance: 1e-4,
   shapeDetail: true,
   turbulence: true,
-  temporalAlpha: 0.01,
+  temporalAlpha: 0.1,
   temporalGamma: 1
 }
 

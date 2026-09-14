@@ -247,7 +247,6 @@ export interface MarchCloudsContext {
   layers: CloudLayerParameterNodes
   march: CloudsMarchParameters
   shadow?: ShadowParameterNodes | null
-  shadowBuffers?: readonly TextureNode[] | null
   shadowAtlas?: TextureNode | null
   depthNode?: TextureNode | null
 }
@@ -470,16 +469,10 @@ export function setupCloudsMarch(
               If(
                 media.get('extinction').greaterThan(march.minExtinction),
                 () => {
-                  // Local sun-detail march (Phase 2); BSM fills the remainder.
-                  // With BSM present, skip the nested sun march at coarser mips
-                  // (same gate as ground bounce) — biggest shadows-on CPU saver.
+// Local sun-detail march (Phase 2); BSM fills the remainder.
                   const localOpticalDepth = float(0).toVar()
                   const sunRayDistance = float(0).toVar()
-                  const shadowBuffers = context.shadowBuffers
                   const shadowAtlas = context.shadowAtlas
-                  const hasBsm =
-                    context.shadow != null &&
-                    (shadowBuffers != null || shadowAtlas != null)
                   const runLocalSun = march.maxIterationCountToSun.greaterThan(0)
                   If(runLocalSun, () => {
                     const sunMarch = marchCloudOpticalDepth(
@@ -497,10 +490,7 @@ export function setupCloudsMarch(
                   // JS-null buffers omit BSM from the shader entirely (toggle
                   // invalidates the march material). Runtime enabled gates the
                   // sample so we never pay Vogel PCF when shadows are off.
-                  if (
-                    context.shadow != null &&
-                    (shadowAtlas != null || shadowBuffers != null)
-                  ) {
+                  if (context.shadow != null && shadowAtlas != null) {
                     If(
                       context.shadow.enabled
                         .greaterThan(0)
@@ -511,8 +501,7 @@ export function setupCloudsMarch(
                             environment,
                             layers,
                             shadow: context.shadow!,
-                            shadowTextures: shadowBuffers ?? [],
-                            shadowAtlas: context.shadowAtlas ?? null,
+                            shadowAtlas,
                             debugMode: march.shadowDebugOpticalDepth,
                             viewMatrix: viewMatrix(camera)
                           },

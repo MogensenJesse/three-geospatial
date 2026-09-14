@@ -1,7 +1,6 @@
 // src/webgpu/CloudsNode.ts
 
 import { Vector2, Vector3 } from 'three'
-import { Fn, screenUV, vec4 } from 'three/tsl'
 import {
   NodeUpdateType,
   TempNode,
@@ -14,12 +13,20 @@ import {
 import { CloudLayer } from '../CloudLayer'
 import { CloudLayers } from '../CloudLayers'
 import {
-  cloneQualitySettings,
   qualityPresets,
   type CloudQualitySettings,
   type PhaseFunctionMode,
   type QualityPreset
 } from '../qualityPresets'
+import { applyCloudsQualitySettings } from './applyCloudsQuality'
+import {
+  applyDebugMarchMode,
+  createCloudsPassTiming,
+  measureCloudsPassTiming,
+  setupCloudsDebugOutput,
+  type CloudsDebugOutput,
+  type CloudsPassTiming
+} from './cloudsDebug'
 import { CloudsEnvironment } from './CloudsEnvironment'
 import {
   resolveCloudsOptions,
@@ -38,17 +45,7 @@ import { ShadowMarchNode } from './ShadowMarchNode'
 import { TurbulenceNode } from './TurbulenceNode'
 import { updateCloudLayerParameters } from './updateCloudLayerParameters'
 
-/** Full-screen diagnostic views for the demo / host tooling. */
-export type CloudsDebugOutput =
-  | 'none'
-  | 'clouds'
-  | 'velocity'
-  | 'shadow-cascade-0'
-  | 'shadow-cascade-1'
-  | 'shadow-cascade-2'
-  | 'optical-depth-local'
-  | 'optical-depth-bsm'
-  | 'no-shadow'
+export type { CloudsDebugOutput, CloudsPassTiming } from './cloudsDebug'
 
 /**
  * Orchestrates procedural textures + layer packing + clouds march. Exposes an
@@ -87,7 +84,7 @@ export class CloudsNode extends TempNode {
   private frame = 0
   private _debugOutput: CloudsDebugOutput = 'none'
   /** CPU ms around each pass (GPU work may complete later). */
-  readonly lastPassTiming = { shadow: 0, march: 0, resolve: 0, total: 0 }
+  readonly lastPassTiming: CloudsPassTiming = createCloudsPassTiming()
 
   coverage = 0.3
 
@@ -114,7 +111,6 @@ export class CloudsNode extends TempNode {
     // Live array: ShadowMarchNode rebuilds the resolve (and its texture nodes)
     // when the cascade count changes, so don't snapshot the array here.
     this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
-      this.marchNode.shadowBuffers = null
     this.resolveNode = new CloudsResolveNode(
       this.marchNode.getTextureNode(),
       this.marchNode.getVelocityTextureNode()
@@ -277,72 +273,8 @@ export class CloudsNode extends TempNode {
   }
 
   applyQualitySettings(settings: CloudQualitySettings): this {
-    const next = cloneQualitySettings(settings)
-    const { clouds: cloudQuality, shadow: shadowQuality } = next
-    const previousCascadeCount = this.shadowNode.shadowMaps.cascadeCount
-    const previousMapSize = this.shadowNode.shadowMaps.mapSize.x
-
-    this.resolutionScale = next.resolutionScale
-    this.temporalUpscale = next.temporalUpscale
-    // Shared uniforms drive cloud + shadow sampling. Enable if either the
-    // cloud or shadow preset requests detail/turbulence (Phase 5).
-    this.parameters.shapeDetailEnabled.value =
-      next.shapeDetail || shadowQuality.shapeDetail
-    this.parameters.turbulenceEnabled.value =
-      next.turbulence || shadowQuality.turbulence
-
-    const march = this.marchNode.march
-    march.multiScatteringOctaves.value = cloudQuality.multiScatteringOctaves
-    march.maxIterationCount.value = cloudQuality.maxIterationCount
-    march.minStepSize.value = cloudQuality.minStepSize
-    march.maxStepSize.value = cloudQuality.maxStepSize
-    march.maxRayDistance.value = cloudQuality.maxRayDistance
-    march.perspectiveStepScale.value = cloudQuality.perspectiveStepScale
-    march.minDensity.value = cloudQuality.minDensity
-    march.minExtinction.value = cloudQuality.minExtinction
-    march.minTransmittance.value = cloudQuality.minTransmittance
-    march.maxIterationCountToSun.value = cloudQuality.secondaryIterationCount
-    march.minSecondaryStepSize.value = cloudQuality.minSecondaryStepSize
-    march.secondaryStepScale.value = cloudQuality.secondaryStepScale
-
-    march.powderScale.value = cloudQuality.powderScale
-    march.powderExponent.value = cloudQuality.powderExponent
-    march.groundBounceScale.value = cloudQuality.groundBounceScale
-    march.maxIterationCountToGround.value = cloudQuality.groundIterationCount
-    march.phaseFunctionMode.value =
-      cloudQuality.phaseFunctionMode === 'accurate' ? 1 : 0
-
-    const shadowMarch = this.shadowNode.march
-    shadowMarch.maxIterationCount.value = shadowQuality.maxIterationCount
-    shadowMarch.minStepSize.value = shadowQuality.minStepSize
-    shadowMarch.maxStepSize.value = shadowQuality.maxStepSize
-    shadowMarch.minDensity.value = shadowQuality.minDensity
-    shadowMarch.minExtinction.value = shadowQuality.minExtinction
-    shadowMarch.minTransmittance.value = shadowQuality.minTransmittance
-
-    this.shadowNode.setMapSize(shadowQuality.mapSize.x)
-    this.shadowNode.setCascadeCount(shadowQuality.cascadeCount)
-    this.shadowNode.resolveNode.temporalAlpha.value = shadowQuality.temporalAlpha
-    this.shadowNode.resolveNode.varianceGamma.value = shadowQuality.temporalGamma
-
-    if (
-      shadowQuality.cascadeCount !== previousCascadeCount ||
-      shadowQuality.mapSize.x !== previousMapSize
-    ) {
-      this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
-      this.marchNode.shadowBuffers = null
-      this.marchNode.invalidateMaterial()
-      this.shadowDebugNodeDisposeRebuild()
-    }
-
-    this.shadowNode.resolveNode.reset()
-    this.resetTemporalHistory()
+    applyCloudsQualitySettings(this, settings)
     return this
-  }
-
-  private shadowDebugNodeDisposeRebuild(): void {
-    // ShadowDebugNode reads sources at setup; cascade rebuild already mutates
-    // the live array referenced by the constructor. Nothing else required.
   }
 
   get shadowMapNode(): ShadowMarchNode {
@@ -413,6 +345,11 @@ export class CloudsNode extends TempNode {
     return this.shadowNode.getBufferNodes()
   }
 
+  /** Horizontal cascade atlas for BSM sampling (march + host materials). */
+  getShadowAtlasNode(): TextureNode | null {
+    return this.shadowNode.getAtlasNode()
+  }
+
   get debugOutput(): CloudsDebugOutput {
     return this._debugOutput
   }
@@ -427,21 +364,7 @@ export class CloudsNode extends TempNode {
   }
 
   private applyDebugMarchMode(): void {
-    const march = this.marchNode.march
-    switch (this._debugOutput) {
-      case 'optical-depth-local':
-        march.shadowDebugOpticalDepth.value = -3
-        break
-      case 'optical-depth-bsm':
-        march.shadowDebugOpticalDepth.value = -4
-        break
-      case 'no-shadow':
-        march.shadowDebugOpticalDepth.value = -2
-        break
-      default:
-        march.shadowDebugOpticalDepth.value = -1
-        break
-    }
+    applyDebugMarchMode(this.marchNode.march, this._debugOutput)
   }
 
   /**
@@ -509,6 +432,36 @@ export class CloudsNode extends TempNode {
 
   getMarchOutputSize(target: Vector2): Vector2 {
     return this.marchNode.getOutputSize(target)
+  }
+
+  /**
+   * Demo / host HUD snapshot. Prefer this over reading resolve-node uniforms.
+   */
+  getPassDiagnostics(
+    marchRender: Vector2,
+    marchOutput: Vector2
+  ): {
+    marchRender: Vector2
+    marchOutput: Vector2
+    temporalUpscale: boolean
+    temporalUpscaleUniform: number
+    temporalHistory: boolean
+    historyValid: number
+    shadowEnabled: boolean
+    timing: CloudsPassTiming
+  } {
+    this.getMarchRenderSize(marchRender)
+    this.getMarchOutputSize(marchOutput)
+    return {
+      marchRender,
+      marchOutput,
+      temporalUpscale: this.temporalUpscale,
+      temporalUpscaleUniform: this.resolveNode.temporalUpscaleNode.value,
+      temporalHistory: this.temporalHistoryEnabled,
+      historyValid: this.resolveNode.historyValid.value,
+      shadowEnabled: this.shadowEnabled,
+      timing: this.lastPassTiming
+    }
   }
 
   get varianceGamma(): number {
@@ -645,7 +598,6 @@ export class CloudsNode extends TempNode {
     this.shadowNode.enabled = value
     this.shadowNode.shadow.enabled.value = value ? 1 : 0
     this.marchNode.shadowAtlas = value ? this.shadowNode.getAtlasNode() : null
-    this.marchNode.shadowBuffers = null
     this.marchNode.invalidateMaterial()
     this.shadowNode.resolveNode.reset()
     this.resetTemporalHistory()
@@ -660,7 +612,6 @@ export class CloudsNode extends TempNode {
     this.shadowNode.setMapSize(value)
     if (value !== previous) {
       this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
-      this.marchNode.shadowBuffers = null
       this.marchNode.invalidateMaterial()
       this.shadowNode.resolveNode.reset()
       this.resetTemporalHistory()
@@ -676,7 +627,6 @@ export class CloudsNode extends TempNode {
     this.shadowNode.setCascadeCount(value)
     if (value !== previous) {
       this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
-      this.marchNode.shadowBuffers = null
       this.marchNode.invalidateMaterial()
       this.shadowNode.resolveNode.reset()
       this.resetTemporalHistory()
@@ -735,20 +685,20 @@ export class CloudsNode extends TempNode {
     updateCloudLayerParameters(this.layerParameters, this.cloudLayers)
     this.marchNode.frame = this.frame
     this.resolveNode.frame.value = this.frame
-    const t0 = performance.now()
-    this.shadowNode.updateBefore(frame)
-    const t1 = performance.now()
-    this.marchNode.render(frame, false)
-    this.marchNode.getOutputSize(this.outputSize)
-    const t2 = performance.now()
-    this.resolveNode.setSize(this.outputSize.x, this.outputSize.y)
-    this.resolveNode.render(frame)
-    this.marchNode.commitReprojection(frame)
-    const t3 = performance.now()
-    this.lastPassTiming.shadow = t1 - t0
-    this.lastPassTiming.march = t2 - t1
-    this.lastPassTiming.resolve = t3 - t2
-    this.lastPassTiming.total = t3 - t0
+    measureCloudsPassTiming(this.lastPassTiming, {
+      shadow: () => {
+        this.shadowNode.updateBefore(frame)
+      },
+      march: () => {
+        this.marchNode.render(frame, false)
+        this.marchNode.getOutputSize(this.outputSize)
+      },
+      resolve: () => {
+        this.resolveNode.setSize(this.outputSize.x, this.outputSize.y)
+        this.resolveNode.render(frame)
+        this.marchNode.commitReprojection(frame)
+      }
+    })
     this.frame = (this.frame + 1) % 16
   }
 
@@ -764,29 +714,11 @@ export class CloudsNode extends TempNode {
 
     // Diagnostics must return from this setup so CloudsNode stays in the graph
     // and updateBefore keeps marching while the camera moves.
-    switch (this._debugOutput) {
-      case 'velocity': {
-        const velocityTex = this.marchNode.getVelocityTextureNode()
-        return Fn(() => {
-          const v = velocityTex.sample(screenUV)
-          return vec4(
-            v.r.mul(1e-4).clamp(0, 1),
-            v.g.mul(20).add(0.5).clamp(0, 1),
-            v.b.mul(20).add(0.5).clamp(0, 1),
-            1
-          )
-        })()
-      }
-      case 'shadow-cascade-0':
-        return new ShadowDebugNode(this.shadowNode.getBufferNodes(), 0)
-      case 'shadow-cascade-1':
-        return new ShadowDebugNode(this.shadowNode.getBufferNodes(), 1)
-      case 'shadow-cascade-2':
-        return new ShadowDebugNode(this.shadowNode.getBufferNodes(), 2)
-      default:
-        // none / clouds / optical-depth_* / no-shadow â†’ resolved cloud buffer
-        return this.textureNode
-    }
+    return setupCloudsDebugOutput(this._debugOutput, {
+      marchNode: this.marchNode,
+      shadowNode: this.shadowNode,
+      textureNode: this.textureNode
+    })
   }
 
   override dispose(): void {
