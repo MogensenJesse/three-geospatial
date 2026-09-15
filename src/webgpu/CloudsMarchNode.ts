@@ -257,7 +257,8 @@ export class CloudsMarchNode extends TempNode {
     let dy = 0
     if (this.temporalUpscale) {
       const offset = bayerOffsets[this.frame % bayerOffsets.length]
-      // WebGPU screen Y is top-down; flip Bayer offset Y so phase rows align.
+      // WebGPU screen Y is top-down; flip Bayer offset Y so the jittered
+      // subpixel matches resolve's top-left phaseIndex (flat[y*4+x]).
       const ox = offset.x
       const oy = 1 - offset.y
       dx = ((ox - 0.5) / march.resolution.value.x) * 4
@@ -266,7 +267,7 @@ export class CloudsMarchNode extends TempNode {
     } else {
       march.mipLevelScale.value = 1
     }
-    // UV-space jitter (screenUV Y-down): negate dy.
+    // Projection NDC Y-up (+dy). screenUV Y-down → UV jitter -dy.
     march.temporalJitter.value.set(dx, this.temporalUpscale ? -dy : 0)
 
     // Ping-pong scratches: same math as `new Matrix4()` each frame (avoids

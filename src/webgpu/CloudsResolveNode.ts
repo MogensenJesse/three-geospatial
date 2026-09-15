@@ -303,7 +303,7 @@ export class CloudsResolveNode extends TempNode {
   readonly velocityNode: TextureNode
   readonly frame = uniform(0, 'int').setName('cloudsResolveFrame')
   readonly temporalAlpha = uniform(0.1).setName('cloudsTemporalAlpha')
-  readonly varianceGamma = uniform(2).setName('cloudsVarianceGamma')
+  readonly varianceGamma = uniform(1.5).setName('cloudsVarianceGamma')
   readonly texelSize = uniform(new Vector2(1, 1)).setName(
     'cloudsResolveTexelSize'
   )
