@@ -112,6 +112,9 @@ export class ShadowMarchNode extends TempNode {
   private renderTargets: RenderTarget[] = []
   /** Horizontal atlas of resolved cascades for cheap march sampling. */
   private readonly cascadeAtlas = new ShadowCascadeAtlas()
+
+  /** CPU split for produce / resolve / atlas (ms). */
+  readonly lastPassTiming = { produce: 0, resolve: 0, atlas: 0 }
   private readonly textureNodes: TextureNode[] = []
   private readonly velocityNodes: TextureNode[] = []
   private readonly materials: NodeMaterial[] = []
@@ -285,9 +288,15 @@ export class ShadowMarchNode extends TempNode {
    */
   renderShadowMaps(frame: NodeFrame, camera: Camera): void {
     if (!this.enabled || frame.renderer == null) {
+      this.lastPassTiming.produce = 0
+      this.lastPassTiming.resolve = 0
+      this.lastPassTiming.atlas = 0
       return
     }
     if (!(camera instanceof PerspectiveCamera)) {
+      this.lastPassTiming.produce = 0
+      this.lastPassTiming.resolve = 0
+      this.lastPassTiming.atlas = 0
       return
     }
 
@@ -347,6 +356,7 @@ export class ShadowMarchNode extends TempNode {
     this.rendererState = resetRendererState(renderer, this.rendererState!)
 
     const cascadeCount = this.shadowMaps.cascadeCount
+    const tProduce0 = performance.now()
     for (let i = 0; i < cascadeCount; ++i) {
       this.march.cascadeIndex.value = i
       this.march.mipLevel.value = shadowMipLevels[i] ?? 2
@@ -355,10 +365,20 @@ export class ShadowMarchNode extends TempNode {
       renderer.clear()
       this.meshes[i].render(renderer)
     }
+    const tProduce1 = performance.now()
 
     restoreRendererState(renderer, this.rendererState)
+    const tResolve0 = performance.now()
     this.resolveNode.render(frame)
+    const tResolve1 = performance.now()
+
+    const tAtlas0 = performance.now()
     if (renderer != null) this.packAtlas(renderer)
+    const tAtlas1 = performance.now()
+
+    this.lastPassTiming.produce = tProduce1 - tProduce0
+    this.lastPassTiming.resolve = tResolve1 - tResolve0
+    this.lastPassTiming.atlas = tAtlas1 - tAtlas0
   }
 
   override updateBefore(frame: NodeFrame): void {

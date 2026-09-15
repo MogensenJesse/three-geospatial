@@ -22,6 +22,13 @@ export type CloudsDebugOutput =
 
 /** CPU ms around each pass (GPU work may complete later). */
 export interface CloudsPassTiming {
+  /** Cascade marches (BSM produce). */
+  produce: number
+  /** Shadow temporal resolve. */
+  shadowResolve: number
+  /** copyTextureToTexture atlas pack. */
+  atlas: number
+  /** produce + shadowResolve + atlas (compat / HUD rollup). */
   shadow: number
   march: number
   resolve: number
@@ -29,7 +36,15 @@ export interface CloudsPassTiming {
 }
 
 export function createCloudsPassTiming(): CloudsPassTiming {
-  return { shadow: 0, march: 0, resolve: 0, total: 0 }
+  return {
+    produce: 0,
+    shadowResolve: 0,
+    atlas: 0,
+    shadow: 0,
+    march: 0,
+    resolve: 0,
+    total: 0
+  }
 }
 
 /** Map a debug view id onto march optical-depth probe uniforms. */
@@ -93,13 +108,21 @@ export function setupCloudsDebugOutput(
 }
 
 /** Time shadow → march → resolve and store EMA-ready CPU ms on `timing`. */
+export interface ShadowPassTimingSplit {
+  produce: number
+  resolve: number
+  atlas: number
+}
+
+/** Time shadow -> march -> resolve; fold shadow split when provided. */
 export function measureCloudsPassTiming(
   timing: CloudsPassTiming,
   passes: {
     shadow: () => void
     march: () => void
     resolve: () => void
-  }
+  },
+  shadowSplit?: ShadowPassTimingSplit | null
 ): void {
   const t0 = performance.now()
   passes.shadow()
@@ -108,7 +131,19 @@ export function measureCloudsPassTiming(
   const t2 = performance.now()
   passes.resolve()
   const t3 = performance.now()
-  timing.shadow = t1 - t0
+
+  if (shadowSplit != null) {
+    timing.produce = shadowSplit.produce
+    timing.shadowResolve = shadowSplit.resolve
+    timing.atlas = shadowSplit.atlas
+    timing.shadow =
+      shadowSplit.produce + shadowSplit.resolve + shadowSplit.atlas
+  } else {
+    timing.produce = 0
+    timing.shadowResolve = 0
+    timing.atlas = 0
+    timing.shadow = t1 - t0
+  }
   timing.march = t2 - t1
   timing.resolve = t3 - t2
   timing.total = t3 - t0

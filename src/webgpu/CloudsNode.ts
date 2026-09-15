@@ -365,6 +365,8 @@ export class CloudsNode extends TempNode {
 
   private applyDebugMarchMode(): void {
     applyDebugMarchMode(this.marchNode.march, this._debugOutput)
+    // Debug probes are a march variant axis (Phase C).
+    this.marchNode.invalidateMaterial()
   }
 
   /**
@@ -685,20 +687,24 @@ export class CloudsNode extends TempNode {
     updateCloudLayerParameters(this.layerParameters, this.cloudLayers)
     this.marchNode.frame = this.frame
     this.resolveNode.frame.value = this.frame
-    measureCloudsPassTiming(this.lastPassTiming, {
-      shadow: () => {
-        this.shadowNode.updateBefore(frame)
+    measureCloudsPassTiming(
+      this.lastPassTiming,
+      {
+        shadow: () => {
+          this.shadowNode.updateBefore(frame)
+        },
+        march: () => {
+          this.marchNode.render(frame, false)
+          this.marchNode.getOutputSize(this.outputSize)
+        },
+        resolve: () => {
+          this.resolveNode.setSize(this.outputSize.x, this.outputSize.y)
+          this.resolveNode.render(frame)
+          this.marchNode.commitReprojection(frame)
+        }
       },
-      march: () => {
-        this.marchNode.render(frame, false)
-        this.marchNode.getOutputSize(this.outputSize)
-      },
-      resolve: () => {
-        this.resolveNode.setSize(this.outputSize.x, this.outputSize.y)
-        this.resolveNode.render(frame)
-        this.marchNode.commitReprojection(frame)
-      }
-    })
+      this.shadowNode.lastPassTiming
+    )
     this.frame = (this.frame + 1) % 16
   }
 

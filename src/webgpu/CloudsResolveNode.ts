@@ -221,7 +221,8 @@ class CloudsResolveColorNode extends TempNode {
         ).toConst()
         const current = owner.inputNode.load(lowResCoord).toConst()
 
-                // flat[y*4+x]; Bayer offset Y is flipped on the CPU for WebGPU.
+        // flat[y*4+x] — same layout as WebGL bayerIndices[x%4][y%4] when
+        // screen Y is already top-left (march jitter Y flip is separate).
         const phaseIndex = coord.y
           .mod(int(4))
           .mul(int(4))

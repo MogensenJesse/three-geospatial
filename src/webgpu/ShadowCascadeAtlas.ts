@@ -1,9 +1,9 @@
-// src/webgpu/ShadowCascadeAtlas.ts
+﻿// src/webgpu/ShadowCascadeAtlas.ts
 
 import {
+  DataArrayTexture,
   HalfFloatType,
   LinearFilter,
-  RenderTarget,
   RGBAFormat,
   Vector3,
   type Texture
@@ -22,50 +22,61 @@ type CopyRenderer = {
 }
 
 /**
- * Horizontal cascade atlas [c0|c1|c2…] for cheap single-bind BSM sampling.
- * Always recreates the RT on resize — WebGPU `setSize` left a stale GPU
- * texture after quality-preset switches.
+ * Cascade array texture (one layer per cascade) for BSM sampling.
+ * Matches WebGL's sampler2DArray shape more closely than a horizontal atlas:
+ * pack still uses N copies, but UV remap math leaves the hot path.
+ * Always recreates the texture on rebuild — WebGPU left stale GPU resources
+ * after quality-preset size changes.
+ *
+ * Note: WebGPU's updateTexture path requires a real ArrayBufferView. A
+ * `DataArrayTexture(null, …)` throws endlessly on `writeTexture`.
  */
 export class ShadowCascadeAtlas {
-  private target: RenderTarget | null = null
-  /** Stable node — only `.value` swaps when the RT is recreated. */
+  private texture: DataArrayTexture | null = null
+  /** Stable node — only `.value` swaps when the array is recreated. */
   private readonly node: TextureNode = texture()
   private readonly dst = new Vector3()
 
   /** Texture node for march / host materials, or null before first rebuild. */
   getTextureNode(): TextureNode | null {
-    return this.target != null ? this.node : null
+    return this.texture != null ? this.node : null
   }
 
   rebuild(cascadeCount: number, mapSize: number): void {
-    this.target?.dispose()
-    this.target = new RenderTarget(mapSize * cascadeCount, mapSize, {
-      depthBuffer: false,
-      type: HalfFloatType,
-      format: RGBAFormat
-    })
-    this.target.texture.minFilter = LinearFilter
-    this.target.texture.magFilter = LinearFilter
-    this.target.texture.generateMipmaps = false
-    this.target.texture.name = 'CloudsShadowAtlas'
-    this.node.value = this.target.texture
+    this.texture?.dispose()
+    // HalfFloat RGBA → Uint16 per channel (Three DataTexture convention).
+    const data = new Uint16Array(mapSize * mapSize * cascadeCount * 4)
+    const next = new DataArrayTexture(data, mapSize, mapSize, cascadeCount)
+    next.format = RGBAFormat
+    next.type = HalfFloatType
+    next.minFilter = LinearFilter
+    next.magFilter = LinearFilter
+    next.generateMipmaps = false
+    next.name = 'CloudsShadowCascadeArray'
+    next.needsUpdate = true
+    // DataArrayTexture sets isDataArrayTexture; some Three paths only check isArrayTexture.
+    ;(next as Texture & { isArrayTexture?: boolean }).isArrayTexture = true
+    this.texture = next
+    this.node.value = next
   }
 
-  /** Pack resolved per-cascade textures into the horizontal atlas. */
+  /** Pack resolved per-cascade textures into array layers (dst.z = layer). */
   pack(
     renderer: CopyRenderer,
     sources: readonly Texture[],
-    mapSize: number
+    _mapSize: number
   ): void {
-    if (this.target == null) return
+    if (this.texture == null) return
     if (typeof renderer.initTexture === 'function') {
-      renderer.initTexture(this.target.texture)
+      renderer.initTexture(this.texture)
     }
+    // GPU copies own the contents; avoid re-uploading the empty CPU buffer.
+    this.texture.needsUpdate = false
     for (let i = 0; i < sources.length; ++i) {
-      this.dst.set(i * mapSize, 0, 0)
+      this.dst.set(0, 0, i)
       renderer.copyTextureToTexture(
         sources[i],
-        this.target.texture,
+        this.texture,
         null,
         this.dst
       )
@@ -73,7 +84,7 @@ export class ShadowCascadeAtlas {
   }
 
   dispose(): void {
-    this.target?.dispose()
-    this.target = null
+    this.texture?.dispose()
+    this.texture = null
   }
 }

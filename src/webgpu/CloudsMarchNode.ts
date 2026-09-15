@@ -30,6 +30,10 @@ import { bayerOffsets } from '../bayer'
 import type { CloudsEnvironment } from './CloudsEnvironment'
 import { outputTexture } from './internal/OutputTextureNode'
 import { CloudsMarchParameters, setupCloudsMarch } from './march'
+import {
+  cloudsMarchVariantKey,
+  resolveCloudsMarchVariant
+} from './cloudsMarchVariant'
 import type {
   CloudLayerParameterNodes,
   CloudParameterNodes
@@ -121,6 +125,15 @@ export class CloudsMarchNode extends TempNode {
   private readonly outputSize = new Vector2(1, 1)
   private previousProjectionMatrix?: Matrix4
   private previousViewMatrix?: Matrix4
+  /** Ping-pong Matrix4 uploads so Three sees a new .value reference each frame. */
+  private readonly invProjScratchA = new Matrix4()
+  private readonly invProjScratchB = new Matrix4()
+  private readonly reprojectionScratchA = new Matrix4()
+  private readonly reprojectionScratchB = new Matrix4()
+  private readonly viewReprojectionScratchA = new Matrix4()
+  private readonly viewReprojectionScratchB = new Matrix4()
+  private matrixScratchFlip = false
+  private lastVariantKey = ''
   private _temporalUpscale = false
 
   constructor(
@@ -160,6 +173,10 @@ export class CloudsMarchNode extends TempNode {
     this.material.depthWrite = false
     // Fullscreen clip-space quad (same pattern as core debug / filter RTT).
     this.material.vertexNode = vec4(positionGeometry.xy, 0, 1)
+    this.material.customProgramCacheKey = () =>
+      cloudsMarchVariantKey(
+        resolveCloudsMarchVariant(this.march, this.shadowAtlas)
+      )
     this.mesh = new QuadMesh(this.material)
   }
 
@@ -252,8 +269,19 @@ export class CloudsMarchNode extends TempNode {
     // UV-space jitter (screenUV Y-down): negate dy.
     march.temporalJitter.value.set(dx, this.temporalUpscale ? -dy : 0)
 
-    // New Matrix4 each frame so uniform upload cannot skip in-place edits.
-    const invProj = new Matrix4().copy(camera.projectionMatrix)
+    // Ping-pong scratches: same math as `new Matrix4()` each frame (avoids
+    // skipped uniform uploads on in-place edits) without per-frame allocs.
+    const flip = this.matrixScratchFlip
+    this.matrixScratchFlip = !flip
+    const invProj = flip ? this.invProjScratchA : this.invProjScratchB
+    const reprojection = flip
+      ? this.reprojectionScratchA
+      : this.reprojectionScratchB
+    const viewReprojection = flip
+      ? this.viewReprojectionScratchA
+      : this.viewReprojectionScratchB
+
+    invProj.copy(camera.projectionMatrix)
     if (this.temporalUpscale) {
       invProj.elements[8] += dx * 2
       invProj.elements[9] += dy * 2
@@ -264,16 +292,15 @@ export class CloudsMarchNode extends TempNode {
     const previousProjection =
       this.previousProjectionMatrix ?? camera.projectionMatrix
     const previousView = this.previousViewMatrix ?? camera.matrixWorldInverse
-    const reprojection = new Matrix4().copy(previousProjection)
+    reprojection.copy(previousProjection)
     if (this.temporalUpscale) {
       reprojection.elements[8] += dx * 2
       reprojection.elements[9] += dy * 2
     }
     reprojection.multiply(previousView)
     march.reprojectionMatrix.value = reprojection
-    march.viewReprojectionMatrix.value = new Matrix4()
-      .copy(reprojection)
-      .multiply(camera.matrixWorld)
+    viewReprojection.copy(reprojection).multiply(camera.matrixWorld)
+    march.viewReprojectionMatrix.value = viewReprojection
   }
 
   copyReprojectionMatrix(camera: Camera): void {
@@ -379,15 +406,29 @@ export class CloudsMarchNode extends TempNode {
   }
 
   /**
-   * Mark the march material dirty so shadow buffer / graph rebinds take effect.
+   * Rebuild the march fragment graph for the current variant key.
+   * No-ops when the key is unchanged (Phase E — skip redundant compiles).
    */
-  invalidateMaterial(): this {
+  /**
+   * @param force - Rebuild even when the variant key is unchanged (e.g. WGSL dump).
+   */
+  invalidateMaterial(force = false): this {
+    const key = cloudsMarchVariantKey(
+      resolveCloudsMarchVariant(this.march, this.shadowAtlas)
+    )
+    if (!force && key === this.lastVariantKey) {
+      return this
+    }
+    this.lastVariantKey = key
     this.material.fragmentNode = new CloudsMarchColorNode(this)
     this.material.needsUpdate = true
     return this
   }
 
   override setup(builder: NodeBuilder): unknown {
+    this.lastVariantKey = cloudsMarchVariantKey(
+      resolveCloudsMarchVariant(this.march, this.shadowAtlas)
+    )
     // Assign a deferred node — do not expand If/Loop into the parent builder.
     this.material.fragmentNode = new CloudsMarchColorNode(this)
     this.material.needsUpdate = true

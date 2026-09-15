@@ -70,6 +70,7 @@ export function applyCloudsQualitySettings(
   // Atlas RT recreates on map/cascade change; rebind so sampling never keeps a
   // disposed GPU texture after preset switches.
   host.marchNode.shadowAtlas = host.shadowNode.getAtlasNode()
+  // No-ops when Phase C variant key is unchanged (e.g. re-apply same preset).
   host.marchNode.invalidateMaterial()
   host.shadowNode.resolveNode.reset()
   host.resetTemporalHistory()

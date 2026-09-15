@@ -185,7 +185,7 @@ export interface SampleShadowOpticalDepthContext {
   environment: CloudsEnvironment
   layers: CloudLayerParameterNodes
   shadow: ShadowParameterNodes
-  /** Horizontal atlas [c0|c1|c2] (one bind for march + host materials). */
+  /** Cascade array texture (layer = cascade index); one bind for march + host. */
   shadowAtlas: TextureNode
   debugMode?: Node<'float'>
   viewMatrix: Node<'mat4'>
@@ -246,18 +246,14 @@ export function sampleShadowOpticalDepth(
             remapClamp(sunDirection.y, 0.1, 0)
           )
 
-          const cascadeCount = shadow.cascadeCount
           const readAt = (sampleUv: Node<'vec2'>): Node<'float'> => {
-            // Horizontal atlas: u = (cascade + u) / N — use float() so U is not
-            // truncated to tile edges (int cascadeCount would cause stroke artifacts).
             const u = sampleUv.x.clamp(0, 1)
             const v = sampleUv.y.clamp(0, 1)
-            const atlasUv = vec2(
-              float(cascadeIndex).add(u).div(float(cascadeCount)),
-              v
-            )
+            // Array layer = cascade index (WebGL sampler2DArray parity).
             return readShadowOpticalDepth(
-              shadowAtlas.sample(atlasUv),
+              (shadowAtlas.depth(cascadeIndex) as TextureNode).sample(
+                vec2(u, v)
+              ),
               distanceToTop,
               distanceOffset
             )
@@ -292,11 +288,9 @@ export function sampleShadowOpticalDepth(
           const debugMode = context.debugMode
           if (debugMode != null) {
             const raw = (channel: 'r' | 'g' | 'b' | 'a'): Node<'float'> => {
-              const atlasUv = vec2(
-                float(cascadeIndex).add(uv.x.clamp(0, 1)).div(float(cascadeCount)),
-                uv.y.clamp(0, 1)
-              )
-              return shadowAtlas.sample(atlasUv)[channel]
+              return (shadowAtlas.depth(cascadeIndex) as TextureNode).sample(
+                vec2(uv.x.clamp(0, 1), uv.y.clamp(0, 1))
+              )[channel]
             }
             opticalDepth.assign(
               debugMode

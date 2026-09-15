@@ -15,7 +15,8 @@ import {
   Scene,
   Vector2,
   Vector3,
-  WebGPURenderer
+  WebGPURenderer,
+  TimestampQuery
 } from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import Stats from 'three/addons/libs/stats.module.js'
@@ -35,6 +36,7 @@ import {
   createPassTimingEma,
   formatPassStats
 } from './passStats'
+import { captureWgslModules, downloadWgslCapture } from './wgslCapture'
 import './styles.css'
 
 interface DemoRenderPipeline {
@@ -126,7 +128,7 @@ async function main(): Promise<void> {
   const exposureInput = requireElement<HTMLInputElement>('exposure')
   const exposureOutput = requireElement<HTMLOutputElement>('exposure-value')
 
-  const renderer = new WebGPURenderer({ antialias: true })
+  const renderer = new WebGPURenderer({ antialias: true, trackTimestamp: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.toneMapping = AgXToneMapping
@@ -251,10 +253,14 @@ async function main(): Promise<void> {
     cloudNode.temporalHistoryEnabled = temporalHistoryInput.checked
   }
 
+  let gpuRenderMs = 0
+  let gpuResolveInFlight = false
+  const dumpWgslButton = requireElement<HTMLButtonElement>('dump-wgsl')
+
   const updatePassStats = (): void => {
     const diag = cloudNode.getPassDiagnostics(marchRenderSize, marchOutputSize)
     renderer.getDrawingBufferSize(drawingBufferSize)
-    accumulatePassTiming(passTimingEma, diag.timing)
+    accumulatePassTiming(passTimingEma, diag.timing, gpuRenderMs)
     passStats.textContent = formatPassStats(
       {
         marchRender: diag.marchRender,
@@ -265,11 +271,72 @@ async function main(): Promise<void> {
         temporalHistory: diag.temporalHistory,
         historyValid: diag.historyValid,
         shadowEnabled: diag.shadowEnabled,
-        timing: diag.timing
+        timing: diag.timing,
+        gpuRenderMs
       },
       passTimingEma
     )
   }
+
+  dumpWgslButton.addEventListener('click', () => {
+    void (async () => {
+      const backend = renderer.backend as { device?: GPUDevice }
+      const device = backend.device
+      if (device == null) {
+        status.textContent = 'WGSL dump: no GPU device yet'
+        return
+      }
+      dumpWgslButton.disabled = true
+      const prevShadows = cloudNode.shadowEnabled
+      const marchMaterial = (
+        cloudNode.marchNode as unknown as {
+          material: { customProgramCacheKey: () => string }
+        }
+      ).material
+      const baseKey = marchMaterial.customProgramCacheKey.bind(marchMaterial)
+
+      const captureVariant = async (
+        shadowsOn: boolean,
+        label: string
+      ): Promise<number> => {
+        cloudNode.shadowEnabled = shadowsOn
+        const nonce = 'dump-' + label + '-' + String(Date.now())
+        marchMaterial.customProgramCacheKey = () => baseKey() + '|' + nonce
+        cloudNode.marchNode.invalidateMaterial(true)
+        status.textContent = 'Capturing WGSL (' + label + ')…'
+        const result = await captureWgslModules(device, {
+          recompile: () => {
+            cloudNode.marchNode.invalidateMaterial(true)
+          },
+          render: () => {
+            renderPipeline.render()
+          },
+          frames: 6
+        })
+        downloadWgslCapture(result, label)
+        return result.modules.length
+      }
+
+      try {
+        const onCount = await captureVariant(true, 'shadows-on')
+        const offCount = await captureVariant(false, 'shadows-off')
+        status.textContent =
+          'WGSL dump: shadows-on ' +
+          String(onCount) +
+          ' + shadows-off ' +
+          String(offCount) +
+          ' modules (downloads + console.table)'
+      } catch (err) {
+        console.error(err)
+        status.textContent = 'WGSL dump failed (see console)'
+      } finally {
+        marchMaterial.customProgramCacheKey = baseKey
+        cloudNode.shadowEnabled = prevShadows
+        cloudNode.marchNode.invalidateMaterial(true)
+        dumpWgslButton.disabled = false
+      }
+    })()
+  })
 
   const syncQualityControlsFromNode = (): void => {
     resolutionScaleInput.value = String(cloudNode.resolutionScale)
@@ -472,6 +539,22 @@ async function main(): Promise<void> {
     stats.begin()
     controls.update()
     renderPipeline.render()
+    if (!gpuResolveInFlight) {
+      gpuResolveInFlight = true
+      void renderer
+        .resolveTimestampsAsync(TimestampQuery.RENDER)
+        .then((ms) => {
+          if (typeof ms === 'number' && Number.isFinite(ms)) {
+            gpuRenderMs = ms
+          }
+        })
+        .catch(() => {
+          /* timestamp-query optional */
+        })
+        .finally(() => {
+          gpuResolveInFlight = false
+        })
+    }
     updatePassStats()
     stats.end()
   })
