@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
           dts({
             entryRoot: 'src',
             include: ['src'],
-            outDir: 'dist/package',
+            outDirs: 'dist/package',
             pathsToAliases: false,
             tsconfigPath: './tsconfig.json'
           })

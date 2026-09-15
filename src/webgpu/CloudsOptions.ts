@@ -2,9 +2,8 @@
 
 import type { Vector2, Vector3 } from 'three'
 import type { Texture3DNode, TextureNode } from 'three/webgpu'
-
-import type { CloudLayers } from '../CloudLayers'
 import type { CloudLayerLike } from '../CloudLayer'
+import type { CloudLayers } from '../CloudLayers'
 import type { PhaseFunctionMode, QualityPreset } from '../qualityPresets'
 import {
   CloudsEnvironment,

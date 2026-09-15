@@ -1,8 +1,8 @@
-﻿// src/webgpu/cloudsMarchVariant.ts
+// src/webgpu/cloudsMarchVariant.ts
 // Phase C: build-time march specialization (JS-omitted TSL, not runtime If/select).
 
-import type { CloudsMarchParameters } from './march'
 import type { TextureNode } from 'three/webgpu'
+import type { CloudsMarchParameters } from './march'
 
 /** Axes that drop substantial WGSL when false / -1. Keep ≤ ~6 live combos. */
 export interface CloudsMarchVariant {

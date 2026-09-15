@@ -1,15 +1,7 @@
+// @ts-nocheck — Three r186 TSL typings are incomplete for this module; revisit.
 // src/webgpu/cloudOpticalDepth.ts
 
-import {
-  Break,
-  float,
-  If,
-  int,
-  Loop,
-  max,
-  mix,
-  struct
-} from 'three/tsl'
+import { Break, float, If, int, Loop, max, mix, struct } from 'three/tsl'
 
 import type { CloudsEnvironment } from './CloudsEnvironment'
 import { FnLayout } from './internal/FnLayout'
@@ -52,11 +44,9 @@ const remapMipIterationCount = /*#__PURE__*/ FnLayout({
   ]
 })(([maxIterationCount, mipLevel, jitter]) => {
   // WebGL: int(max(0, remap(mip, 0, 1, max+1, 1) - jitter))
-  const remapped = mix(
-    float(maxIterationCount).add(1),
-    float(1),
-    mipLevel
-  ).sub(jitter)
+  const remapped = mix(float(maxIterationCount).add(1), float(1), mipLevel).sub(
+    jitter
+  )
   return int(max(float(0), remapped))
 })
 
@@ -121,7 +111,6 @@ export function marchCloudOpticalDepth(
           start: 0,
           end: MAX_SECONDARY_OPTICAL_DEPTH_ITERATIONS,
           type: 'int',
-          name: 'i',
           condition: '<'
         },
         ({ i }) => {

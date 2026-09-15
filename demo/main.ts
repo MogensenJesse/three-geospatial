@@ -1,5 +1,10 @@
 // demo/main.ts
 
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import Stats from 'three/addons/libs/stats.module.js'
+import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
+import ThreeRenderPipeline from 'three/src/renderers/common/RenderPipeline.js'
+import { float, mix, pass, positionWorld, uniform } from 'three/tsl'
 import {
   AgXToneMapping,
   BoxGeometry,
@@ -13,22 +18,17 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   Scene,
+  TimestampQuery,
   Vector2,
   Vector3,
-  WebGPURenderer,
-  TimestampQuery
+  WebGPURenderer
 } from 'three/webgpu'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import Stats from 'three/addons/libs/stats.module.js'
-import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
-import ThreeRenderPipeline from 'three/src/renderers/common/RenderPipeline.js'
-import { float, mix, pass, positionWorld, uniform } from 'three/tsl'
 
 import {
-  clouds,
-  cloudShadow,
-  compositeClouds,
   type CloudsDebugOutput,
+  cloudShadow,
+  clouds,
+  compositeClouds,
   type QualityPreset
 } from '../src'
 import {
@@ -84,10 +84,22 @@ async function main(): Promise<void> {
   const status = requireElement<HTMLElement>('status')
   const coverageInput = requireElement<HTMLInputElement>('coverage')
   const coverageOutput = requireElement<HTMLOutputElement>('coverage-value')
+  const layerControls = [0, 1, 2].map(index => ({
+    index,
+    altitude: requireElement<HTMLInputElement>(`layer-${index}-altitude`),
+    altitudeOut: requireElement<HTMLOutputElement>(
+      `layer-${index}-altitude-value`
+    ),
+    height: requireElement<HTMLInputElement>(`layer-${index}-height`),
+    heightOut: requireElement<HTMLOutputElement>(`layer-${index}-height-value`),
+    density: requireElement<HTMLInputElement>(`layer-${index}-density`),
+    densityOut: requireElement<HTMLOutputElement>(
+      `layer-${index}-density-value`
+    )
+  }))
   const animateWeatherInput =
     requireElement<HTMLInputElement>('animate-weather')
-  const qualityPresetInput =
-    requireElement<HTMLSelectElement>('quality-preset')
+  const qualityPresetInput = requireElement<HTMLSelectElement>('quality-preset')
   const resolutionScaleInput =
     requireElement<HTMLSelectElement>('resolution-scale')
   const resolutionScaleOutput = requireElement<HTMLOutputElement>(
@@ -112,8 +124,9 @@ async function main(): Promise<void> {
     'march-iterations-value'
   )
   const multiScatterInput = requireElement<HTMLInputElement>('multi-scatter')
-  const multiScatterOutput =
-    requireElement<HTMLOutputElement>('multi-scatter-value')
+  const multiScatterOutput = requireElement<HTMLOutputElement>(
+    'multi-scatter-value'
+  )
   const powderScaleInput = requireElement<HTMLInputElement>('powder-scale')
   const powderScaleOutput =
     requireElement<HTMLOutputElement>('powder-scale-value')
@@ -121,8 +134,7 @@ async function main(): Promise<void> {
   const groundBounceOutput = requireElement<HTMLOutputElement>(
     'ground-bounce-value'
   )
-  const phaseFunctionInput =
-    requireElement<HTMLSelectElement>('phase-function')
+  const phaseFunctionInput = requireElement<HTMLSelectElement>('phase-function')
   const sunInput = requireElement<HTMLInputElement>('sun-elevation')
   const sunOutput = requireElement<HTMLOutputElement>('sun-value')
   const exposureInput = requireElement<HTMLInputElement>('exposure')
@@ -225,7 +237,7 @@ async function main(): Promise<void> {
   const cloudShadowTransmittance = cloudShadow(cloudNode, positionWorld)
   const sceneShadowFactor = mix(
     float(1),
-    cloudShadowTransmittance,
+    cloudShadowTransmittance as never,
     sceneShadowsEnabled
   )
   groundMaterial.aoNode = sceneShadowFactor
@@ -237,7 +249,7 @@ async function main(): Promise<void> {
   cloudNode.depthNode = sceneDepth
 
   const renderPipeline = new RenderPipeline(renderer)
-  const compositedOutput = compositeClouds(sceneColor, cloudNode)
+  const compositedOutput = compositeClouds(sceneColor, cloudNode as never)
   renderPipeline.outputNode = compositedOutput
 
   const updateDebugOutput = (): void => {
@@ -245,7 +257,9 @@ async function main(): Promise<void> {
     cloudNode.debugOutput = mode
     // Use cloudNode itself for diagnostics so its updateBefore (march) still runs.
     renderPipeline.outputNode =
-      mode === 'none' ? compositedOutput : (cloudNode as typeof compositedOutput)
+      mode === 'none'
+        ? compositedOutput
+        : (cloudNode as unknown as typeof compositedOutput)
     ;(renderPipeline as { needsUpdate?: boolean }).needsUpdate = true
   }
 
@@ -381,6 +395,36 @@ async function main(): Promise<void> {
     coverageOutput.value = coverage.toFixed(2)
   }
 
+  const syncLayerControlsFromNode = (): void => {
+    for (const ctrl of layerControls) {
+      const layer = cloudNode.cloudLayers[ctrl.index]
+      ctrl.altitude.value = String(layer.altitude)
+      ctrl.altitudeOut.value = String(Math.round(layer.altitude))
+      ctrl.height.value = String(layer.height)
+      ctrl.heightOut.value = String(Math.round(layer.height))
+      ctrl.density.value = String(layer.densityScale)
+      ctrl.densityOut.value =
+        layer.densityScale < 0.01
+          ? layer.densityScale.toFixed(3)
+          : layer.densityScale.toFixed(2)
+    }
+  }
+
+  const updateLayerFromControls = (index: number): void => {
+    const ctrl = layerControls[index]
+    const layer = cloudNode.cloudLayers[index]
+    layer.altitude = Number(ctrl.altitude.value)
+    layer.height = Number(ctrl.height.value)
+    layer.densityScale = Number(ctrl.density.value)
+    ctrl.altitudeOut.value = String(Math.round(layer.altitude))
+    ctrl.heightOut.value = String(Math.round(layer.height))
+    ctrl.densityOut.value =
+      layer.densityScale < 0.01
+        ? layer.densityScale.toFixed(3)
+        : layer.densityScale.toFixed(2)
+    cloudNode.resetTemporalHistory()
+  }
+
   const updateAnimation = (): void => {
     cloudNode.localWeatherVelocity.set(
       animateWeatherInput.checked ? 0.001 : 0,
@@ -492,6 +536,15 @@ async function main(): Promise<void> {
   }
 
   coverageInput.addEventListener('input', updateCoverage)
+  for (const ctrl of layerControls) {
+    const idx = ctrl.index
+    const onLayer = (): void => {
+      updateLayerFromControls(idx)
+    }
+    ctrl.altitude.addEventListener('input', onLayer)
+    ctrl.height.addEventListener('input', onLayer)
+    ctrl.density.addEventListener('input', onLayer)
+  }
   animateWeatherInput.addEventListener('change', updateAnimation)
   qualityPresetInput.addEventListener('change', updateQualityPreset)
   resolutionScaleInput.addEventListener('change', updateResolutionScale)
@@ -511,6 +564,7 @@ async function main(): Promise<void> {
   sunInput.addEventListener('input', updateSun)
   exposureInput.addEventListener('input', updateExposure)
   updateCoverage()
+  syncLayerControlsFromNode()
   updateAnimation()
   updateQualityPreset()
   updateCloudShadows()
@@ -543,7 +597,7 @@ async function main(): Promise<void> {
       gpuResolveInFlight = true
       void renderer
         .resolveTimestampsAsync(TimestampQuery.RENDER)
-        .then((ms) => {
+        .then(ms => {
           if (typeof ms === 'number' && Number.isFinite(ms)) {
             gpuRenderMs = ms
           }
@@ -567,9 +621,10 @@ async function main(): Promise<void> {
       renderer.setAnimationLoop(null)
       window.removeEventListener('resize', resize)
       coverageInput.removeEventListener('input', updateCoverage)
+      // Layer control listeners are anonymous; left until page unload.
       animateWeatherInput.removeEventListener('change', updateAnimation)
       qualityPresetInput.removeEventListener('change', updateQualityPreset)
-  resolutionScaleInput.removeEventListener('change', updateResolutionScale)
+      resolutionScaleInput.removeEventListener('change', updateResolutionScale)
       temporalUpscaleInput.removeEventListener('change', updateTemporalUpscale)
       shapeDetailInput.removeEventListener('change', updateShapeDetail)
       turbulenceInput.removeEventListener('change', updateTurbulence)

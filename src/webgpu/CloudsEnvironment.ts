@@ -1,6 +1,6 @@
 // src/webgpu/CloudsEnvironment.ts
 
-import { Vector2, Vector3, type PerspectiveCamera } from 'three'
+import { type PerspectiveCamera, Vector2, Vector3 } from 'three'
 import { uniform } from 'three/tsl'
 import type { TextureNode } from 'three/webgpu'
 

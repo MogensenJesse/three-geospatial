@@ -5,7 +5,28 @@ The library includes procedural cloud textures, cascaded Beer shadow maps,
 scene-depth occlusion, and temporal upscaling without React, an atmosphere
 package, or external cloud assets.
 
-Three.js 0.183 and a WebGPU-capable browser are required.
+Three.js **r185+** (peer `>=0.185 <0.187`) and a WebGPU-capable browser are required.
+Lighting is **host-provided** (`sunIrradiance` / `skyIrradiance`) so the
+package stays independent of Preetham, atmosphere, or any sky system.
+
+## Public API (stable)
+
+Import from the package root:
+
+| Export | Role |
+|--------|------|
+| `clouds` / `CloudsNode` | Create and drive the cloud pass |
+| `CloudsOptions` / `CloudsFacadeOptions` | Construction options |
+| `compositeClouds` | Premultiplied HDR composite over the scene |
+| `cloudShadow` / `CloudShadowNode` | Sample cloud shadows in host materials |
+| `CloudLayer` / `CloudLayers` | Per-layer altitude, height, density, … |
+| `DensityProfile` | Vertical density shape |
+| `qualityPresets` / `applyQualitySettings` via node | Low/medium/high/ultra |
+| `CloudsEnvironment` | Camera / map / sun / irradiance container |
+
+Internals (`march`, atlas, resolve shaders) are not part of the root barrel.
+`CloudsNode.marchNode` / `shadowNode` exist for advanced tooling but are not
+required for normal integration.
 
 ## Run the demo
 
@@ -14,65 +35,120 @@ npm install
 npm run dev
 ```
 
-The vanilla Vite demo includes orbit controls and native controls for cloud
-coverage and sun elevation.
-
-## Build and check
+## Build the library
 
 ```sh
 npm run typecheck
-npm run lint
-npm run build
+npm run build:library
 ```
 
-`npm run build` writes the library to `dist/package` and the demo to
-`dist/demo`.
+Output: `dist/package/` (`index.js`, `index.cjs`, `index.d.ts`).
 
-## Basic integration
+## Use in another project
+
+From this repo:
+
+```sh
+npm run build:library
+npm pack
+```
+
+In the other project (path or tarball):
+
+```sh
+npm install ../three-geospatial/webgpu-clouds-0.1.0.tgz
+# or: npm install file:../three-geospatial
+```
+
+Peer dependency: `three@>=0.185.0 <0.187.0` (developed against r186; r185 should work).
+
+### Minimal integration
 
 ```ts
-import { clouds, compositeClouds } from 'webgpu-clouds'
 import {
-  ACESFilmicToneMapping,
+  clouds,
+  compositeClouds,
+  cloudShadow,
+  qualityPresets
+} from 'webgpu-clouds'
+import {
+  AgXToneMapping,
   PerspectiveCamera,
   Scene,
   Vector2,
   Vector3
-} from 'three'
-import { pass } from 'three/tsl'
-import { RenderPipeline, WebGPURenderer } from 'three/webgpu'
+} from 'three/webgpu'
+import { pass, float, mix, positionWorld } from 'three/tsl'
+import { MeshStandardNodeMaterial } from 'three/webgpu'
+import RenderPipeline from 'three/src/renderers/common/RenderPipeline.js'
 
-const renderer = new WebGPURenderer()
-renderer.toneMapping = ACESFilmicToneMapping
+const renderer = /* your WebGPURenderer */
+renderer.toneMapping = AgXToneMapping
 
 const scene = new Scene()
 const camera = new PerspectiveCamera(60, 1, 1, 100_000)
+
 const cloudNode = clouds({
   camera,
   mapOrigin: new Vector3(),
   mapSize: new Vector2(80_000, 80_000),
   worldUnitsPerMeter: 1,
   sunDirection: new Vector3(0.4, 0.8, 0.2).normalize(),
+  // Host lighting (atmosphere, Preetham bake, art-direct — your choice)
   sunIrradiance: new Vector3(12, 11, 10),
-  skyIrradiance: new Vector3(0.35, 0.45, 0.65)
+  skyIrradiance: new Vector3(0.35, 0.45, 0.65),
+  coverage: 0.4,
+  qualityPreset: 'high',
+  cloudLayers: [
+    { channel: 'r', altitude: 750, height: 650, densityScale: 0.2, shadow: true },
+    { channel: 'g', altitude: 1000, height: 1200, densityScale: 0.2, shadow: true },
+    { channel: 'b', altitude: 7500, height: 500, densityScale: 0.003 }
+  ]
 })
 
+// Live layer edits
+cloudNode.cloudLayers[0].altitude = 900
+
 const scenePass = pass(scene, camera, { samples: 0 })
-const sceneColor = scenePass.getTextureNode('output')
-const sceneDepth = scenePass.getTextureNode('depth')
-cloudNode.depthNode = sceneDepth
+cloudNode.depthNode = scenePass.getTextureNode('depth')
+
+// Optional: darken ground/landmarks under cloud shadows
+const groundMaterial = new MeshStandardNodeMaterial({ color: 0x52634d })
+groundMaterial.aoNode = cloudShadow(cloudNode, positionWorld)
 
 const pipeline = new RenderPipeline(renderer)
-pipeline.outputNode = compositeClouds(sceneColor, cloudNode)
-pipeline.render()
+pipeline.outputNode = compositeClouds(
+  scenePass.getTextureNode('output'),
+  cloudNode
+)
 ```
 
-Use the `CloudsNode` itself in the composition graph. Sampling only
-`cloudNode.getTextureNode()` does not register the node's shadow, march, and
-temporal update passes.
+**Important:** put `CloudsNode` in the composition graph (via `compositeClouds`
+or as a parent update). Sampling only `cloudNode.getTextureNode()` does **not**
+run shadow / march / resolve passes.
 
-Cloud output is premultiplied linear HDR. `compositeClouds` applies the
-correct blend, and tone mapping belongs after cloud composition.
+Cloud output is premultiplied linear HDR. Tone-map **after** `compositeClouds`.
+
+Each frame, update host lighting if the sun moves:
+
+```ts
+cloudNode.environment.sunDirection.copy(sunDir)
+cloudNode.environment.sunIrradiance.set(…)
+cloudNode.environment.skyIrradiance.set(…)
+```
+
+After camera cuts or map rebases:
+
+```ts
+cloudNode.resetTemporalHistory()
+```
+
+Quality:
+
+```ts
+cloudNode.applyQualitySettings(qualityPresets.high)
+// or cloudNode.qualityPreset = 'medium'
+```
 
 ## Coordinates and lighting
 
@@ -82,14 +158,6 @@ correct blend, and tone mapping belongs after cloud composition.
 - `worldUnitsPerMeter` converts meter-based cloud settings to scene units.
 - `sunDirection` points from the world toward the sun.
 - `sunIrradiance` and `skyIrradiance` are linear HDR host-lighting inputs.
-
-Assign the scene pass depth texture to `cloudNode.depthNode` so opaque
-geometry occludes the clouds. Reset temporal history after camera cuts,
-world-origin rebases, or discontinuous map changes:
-
-```ts
-cloudNode.resetTemporalHistory()
-```
 
 ## License
 

@@ -1,8 +1,8 @@
 // src/webgpu/applyCloudsQuality.ts
 
 import {
-  cloneQualitySettings,
-  type CloudQualitySettings
+  type CloudQualitySettings,
+  cloneQualitySettings
 } from '../qualityPresets'
 import type { CloudsMarchNode } from './CloudsMarchNode'
 import type { CloudParameterNodes } from './parameters'

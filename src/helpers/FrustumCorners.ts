@@ -28,7 +28,7 @@
  * SOFTWARE.
  */
 
-import { Vector3, type Camera, type Matrix4 } from 'three'
+import { type Camera, type Matrix4, Vector3 } from 'three'
 
 export class FrustumCorners {
   readonly near = [new Vector3(), new Vector3(), new Vector3(), new Vector3()]
@@ -93,7 +93,11 @@ export class FrustumCorners {
     result: FrustumCorners[] = []
   ): FrustumCorners[] {
     for (let index = 0; index < clipDepths.length; ++index) {
-      const frustum = (result[index] ??= new FrustumCorners())
+      let frustum = result[index]
+      if (frustum == null) {
+        frustum = new FrustumCorners()
+        result[index] = frustum
+      }
       if (index === 0) {
         for (let i = 0; i < 4; ++i) {
           frustum.near[i].copy(this.near[i])

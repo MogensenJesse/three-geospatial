@@ -1,6 +1,7 @@
 // src/webgpu/internal/node.ts
 
-import { Node as ThreeNode } from 'three/webgpu'
+import type { Node as ThreeNode } from 'three/webgpu'
+import { Node as ThreeNodeValue } from 'three/webgpu'
 
 export type NodeType =
   | 'float'
@@ -25,12 +26,27 @@ export type NodeType =
   | 'color'
 
 /**
- * Annotation-only TSL node type. Three's current TSL declarations do not
- * consistently preserve value dimensions through every operation.
+ * Common numeric/vector node kinds that carry math helpers in @types/three
+ * r186. Using this as the default keeps `.add` / `.mul` / `.saturate` etc.
+ * available when a call site does not pin a narrower type.
  */
-export type Node<
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  T extends NodeType = NodeType
-> = ThreeNode
+type MathNodeType =
+  | 'float'
+  | 'int'
+  | 'uint'
+  | 'bool'
+  | 'vec2'
+  | 'vec3'
+  | 'vec4'
+  | 'mat2'
+  | 'mat3'
+  | 'mat4'
+  | 'color'
 
-export const Node = ThreeNode
+/**
+ * Typed TSL node. Narrow `T` when you can; the default is a math-capable
+ * union so procedural shader code typechecks under Three r186+.
+ */
+export type Node<T extends NodeType = MathNodeType> = ThreeNode<T>
+
+export const Node = ThreeNodeValue

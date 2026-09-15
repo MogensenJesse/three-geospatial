@@ -15,15 +15,15 @@ interface Entry {
 }
 
 // prettier-ignore
-const entriesScratch: Entry[] = /*#__PURE__*/ Array.from(
-  { length: 8 },
-  () => ({ value: 0, flag: 0 })
-)
+const entriesScratch: Entry[] = /*#__PURE__*/ Array.from({ length: 8 }, () => ({
+  value: 0,
+  flag: 0
+}))
 // prettier-ignore
-const intervalsScratch = /*#__PURE__*/ Array.from(
-  { length: 3 },
-  () => ({ min: 0, max: 0 })
-)
+const intervalsScratch = /*#__PURE__*/ Array.from({ length: 3 }, () => ({
+  min: 0,
+  max: 0
+}))
 
 function compareEntries(a: Entry, b: Entry): number {
   return a.value !== b.value ? a.value - b.value : a.flag - b.flag

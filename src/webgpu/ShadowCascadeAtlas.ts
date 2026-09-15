@@ -5,19 +5,15 @@ import {
   HalfFloatType,
   LinearFilter,
   RGBAFormat,
-  Vector3,
-  type Texture
+  type Texture,
+  Vector3
 } from 'three'
 import { texture } from 'three/tsl'
 import type { TextureNode } from 'three/webgpu'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CopyRenderer = {
-  copyTextureToTexture: (
-    src: Texture,
-    dst: Texture,
-    ...rest: any[]
-  ) => void
+  copyTextureToTexture: (src: Texture, dst: Texture, ...rest: any[]) => void
   initTexture?: (t: Texture) => void
 }
 
@@ -74,12 +70,7 @@ export class ShadowCascadeAtlas {
     this.texture.needsUpdate = false
     for (let i = 0; i < sources.length; ++i) {
       this.dst.set(0, 0, i)
-      renderer.copyTextureToTexture(
-        sources[i],
-        this.texture,
-        null,
-        this.dst
-      )
+      renderer.copyTextureToTexture(sources[i], this.texture, null, this.dst)
     }
   }
 

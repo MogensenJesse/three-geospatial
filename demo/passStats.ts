@@ -70,8 +70,7 @@ export function formatPassStats(
 ): string {
   const onOff = (v: boolean): string => (v ? 'on' : 'off')
   const ms = (n: number): string => n.toFixed(1)
-  const gpu =
-    timingEma.gpuRender > 0 ? ` · gpu ${ms(timingEma.gpuRender)}` : ''
+  const gpu = timingEma.gpuRender > 0 ? ` · gpu ${ms(timingEma.gpuRender)}` : ''
   return (
     `March RT ${snap.marchRender.x}×${snap.marchRender.y} · ` +
     `out ${snap.marchOutput.x}×${snap.marchOutput.y} · ` +

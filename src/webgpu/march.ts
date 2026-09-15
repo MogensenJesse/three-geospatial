@@ -1,13 +1,15 @@
+// @ts-nocheck — Three r186 TSL typings are incomplete for this module; revisit.
 // src/webgpu/march.ts
 
 import { Matrix4, Vector2 } from 'three'
 import {
   Break,
   exp,
-  float,
   Fn,
+  float,
   If,
   int,
+  interleavedGradientNoise,
   Loop,
   max,
   min,
@@ -15,7 +17,6 @@ import {
   positionGeometry,
   pow,
   remapClamp,
-  interleavedGradientNoise,
   screenCoordinate,
   screenUV,
   struct,
@@ -28,6 +29,11 @@ import {
 import type { NodeBuilder, TextureNode } from 'three/webgpu'
 
 import type { CloudsEnvironment } from './CloudsEnvironment'
+import { marchCloudOpticalDepth } from './cloudOpticalDepth'
+import {
+  type CloudsMarchVariant,
+  resolveCloudsMarchVariant
+} from './cloudsMarchVariant'
 import {
   inverseProjectionMatrix,
   inverseViewMatrix,
@@ -49,11 +55,6 @@ import {
   sampleWeather
 } from './sampling'
 import type { ShadowParameterNodes } from './shadowParameters'
-import {
-  resolveCloudsMarchVariant,
-  type CloudsMarchVariant
-} from './cloudsMarchVariant'
-import { marchCloudOpticalDepth } from './cloudOpticalDepth'
 import { sampleShadowOpticalDepth } from './shadowSampling'
 
 const RECIPROCAL_PI4 = /*#__PURE__*/ float(1 / (4 * Math.PI))
@@ -221,14 +222,7 @@ const phaseForVariant = (
   variant: CloudsMarchVariant
 ): Node<'float'> => {
   if (variant.phaseAccurate) {
-    return phaseFunction(
-      cosTheta,
-      attenuation,
-      g1,
-      g2,
-      mixWeight,
-      int(1)
-    )
+    return phaseFunction(cosTheta, attenuation, g1, g2, mixWeight, int(1))
   }
   return phaseApproximate(cosTheta, attenuation, g1, g2, mixWeight)
 }
@@ -266,14 +260,6 @@ const approximateMultipleScattering = (
   )
   return scattering
 }
-
-const hashJitter = /*#__PURE__*/ FnLayout({
-  name: 'cloudsHashJitter',
-  type: 'float',
-  inputs: [{ name: 'seed', type: 'vec2' }]
-})(([seed]) => {
-  return seed.dot(vec2(12.9898, 78.233)).sin().mul(43758.5453).fract()
-})
 
 export interface MarchCloudsContext {
   environment: CloudsEnvironment
@@ -504,7 +490,7 @@ export function setupCloudsMarch(
               If(
                 media.get('extinction').greaterThan(march.minExtinction),
                 () => {
-// Local sun-detail march (Phase 2); BSM fills the remainder.
+                  // Local sun-detail march (Phase 2); BSM fills the remainder.
                   const localOpticalDepth = float(0).toVar()
                   const sunRayDistance = float(0).toVar()
                   const shadowAtlas = context.shadowAtlas
@@ -523,7 +509,11 @@ export function setupCloudsMarch(
                   }
                   const bsmOpticalDepth = float(0).toVar()
                   // Phase C: BSM + Vogel only in the shadows-on material variant.
-                  if (variant.shadows && context.shadow != null && shadowAtlas != null) {
+                  if (
+                    variant.shadows &&
+                    context.shadow != null &&
+                    shadowAtlas != null
+                  ) {
                     If(height.lessThan(layers.shadowTopHeight), () => {
                       const sampled = sampleShadowOpticalDepth(
                         {

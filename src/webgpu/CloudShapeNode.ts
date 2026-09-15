@@ -1,7 +1,7 @@
 // src/webgpu/CloudShapeNode.ts
 
 import { Vector3 } from 'three'
-import { vec2, vec3, vec4 } from 'three/tsl'
+import { int, vec2, vec3, vec4 } from 'three/tsl'
 import type { NodeBuilder } from 'three/webgpu'
 
 import { CLOUD_SHAPE_TEXTURE_SIZE } from '../constants'
@@ -17,7 +17,11 @@ export const perlinWorley = /*#__PURE__*/ FnLayout({
 })(([point]) => {
   const octaveCount = 3
   const frequency = 8
-  const perlin = stackablePerlinNoise(point, frequency, octaveCount).saturate()
+  const perlin = stackablePerlinNoise(
+    point,
+    vec3(frequency),
+    int(octaveCount)
+  ).saturate()
 
   const cellCount = 4
   const noise = vec3(

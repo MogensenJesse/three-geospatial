@@ -32,13 +32,13 @@ import {
   Box3,
   Matrix4,
   Object3D,
+  type PerspectiveCamera,
   Vector2,
-  Vector3,
-  type PerspectiveCamera
+  Vector3
 } from 'three'
 
 import { FrustumCorners } from './helpers/FrustumCorners'
-import { splitFrustum, type FrustumSplitMode } from './helpers/splitFrustum'
+import { type FrustumSplitMode, splitFrustum } from './helpers/splitFrustum'
 
 const vectorScratch1 = /*#__PURE__*/ new Vector3()
 const vectorScratch2 = /*#__PURE__*/ new Vector3()

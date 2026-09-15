@@ -1,3 +1,4 @@
+import type { Node as ThreeNode } from 'three/webgpu'
 // src/webgpu/ShadowDebugNode.ts
 
 import { float, screenUV } from 'three/tsl'
@@ -8,7 +9,7 @@ import { TempNode, type TextureNode } from 'three/webgpu'
  * read at setup time so a live per-cascade array survives cascade rebuilds.
  */
 export class ShadowDebugNode extends TempNode {
-  static override get type(): string {
+  static get type(): string {
     return 'ShadowDebugNode'
   }
 
@@ -19,7 +20,7 @@ export class ShadowDebugNode extends TempNode {
     super('vec4')
   }
 
-  override setup(): unknown {
+  override setup(): ThreeNode | null | undefined {
     const source = this.sources[this.cascade] ?? this.sources[0]
     return source?.sample(screenUV) ?? float(0)
   }

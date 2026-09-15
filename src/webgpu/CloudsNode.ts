@@ -1,11 +1,12 @@
+import type { Node as ThreeNode } from 'three/webgpu'
 // src/webgpu/CloudsNode.ts
 
 import { Vector2, Vector3 } from 'three'
 import {
-  NodeUpdateType,
-  TempNode,
   type NodeBuilder,
   type NodeFrame,
+  NodeUpdateType,
+  TempNode,
   type Texture3DNode,
   type TextureNode
 } from 'three/webgpu'
@@ -13,30 +14,30 @@ import {
 import { CloudLayer } from '../CloudLayer'
 import { CloudLayers } from '../CloudLayers'
 import {
-  qualityPresets,
   type CloudQualitySettings,
   type PhaseFunctionMode,
-  type QualityPreset
+  type QualityPreset,
+  qualityPresets
 } from '../qualityPresets'
 import { applyCloudsQualitySettings } from './applyCloudsQuality'
-import {
-  applyDebugMarchMode,
-  createCloudsPassTiming,
-  measureCloudsPassTiming,
-  setupCloudsDebugOutput,
-  type CloudsDebugOutput,
-  type CloudsPassTiming
-} from './cloudsDebug'
-import { CloudsEnvironment } from './CloudsEnvironment'
-import {
-  resolveCloudsOptions,
-  type CloudsFacadeOptions,
-  type CloudsOptions
-} from './CloudsOptions'
 import { CloudShapeDetailNode } from './CloudShapeDetailNode'
 import { CloudShapeNode } from './CloudShapeNode'
+import { CloudsEnvironment } from './CloudsEnvironment'
 import { CloudsMarchNode } from './CloudsMarchNode'
+import {
+  type CloudsFacadeOptions,
+  type CloudsOptions,
+  resolveCloudsOptions
+} from './CloudsOptions'
 import { CloudsResolveNode } from './CloudsResolveNode'
+import {
+  applyDebugMarchMode,
+  type CloudsDebugOutput,
+  type CloudsPassTiming,
+  createCloudsPassTiming,
+  measureCloudsPassTiming,
+  setupCloudsDebugOutput
+} from './cloudsDebug'
 import type { Node } from './internal/node'
 import { LocalWeatherNode } from './LocalWeatherNode'
 import { CloudLayerParameterNodes, CloudParameterNodes } from './parameters'
@@ -52,7 +53,7 @@ export type { CloudsDebugOutput, CloudsPassTiming } from './cloudsDebug'
  * overlay texture for composition (or a diagnostic view when selected).
  */
 export class CloudsNode extends TempNode {
-  static override get type(): string {
+  static get type(): string {
     return 'CloudsNode'
   }
 
@@ -221,7 +222,6 @@ export class CloudsNode extends TempNode {
     if (facade.shapeDetailVelocity != null) {
       this.shapeDetailVelocity.copy(facade.shapeDetailVelocity)
     }
-
   }
 
   private applyPostQualityFacade(facade: CloudsFacadeOptions): void {
@@ -237,7 +237,8 @@ export class CloudsNode extends TempNode {
       this.secondaryIterationCount = facade.secondaryIterationCount
     }
     if (facade.powderScale != null) this.powderScale = facade.powderScale
-    if (facade.powderExponent != null) this.powderExponent = facade.powderExponent
+    if (facade.powderExponent != null)
+      this.powderExponent = facade.powderExponent
     if (facade.groundBounceScale != null) {
       this.groundBounceScale = facade.groundBounceScale
     }
@@ -282,7 +283,7 @@ export class CloudsNode extends TempNode {
   }
 
   getTextureNode(): TextureNode {
-    return this.textureNode
+    return this.textureNode as unknown as TextureNode
   }
 
   getVelocityTextureNode(): TextureNode {
@@ -666,7 +667,7 @@ export class CloudsNode extends TempNode {
     return this
   }
 
-  override updateBefore(frame: NodeFrame): void {
+  override updateBefore(frame: NodeFrame): boolean | undefined {
     const deltaTime = frame.deltaTime ?? 0
     this.environment.update()
     this.parameters.coverage.value = this.coverage
@@ -706,9 +707,10 @@ export class CloudsNode extends TempNode {
       this.shadowNode.lastPassTiming
     )
     this.frame = (this.frame + 1) % 16
+    return undefined
   }
 
-  override setup(builder: NodeBuilder): unknown {
+  override setup(builder: NodeBuilder): ThreeNode | null | undefined {
     // Build only internally owned procedural generators.
     this.localWeather?.build(builder)
     this.shape?.build(builder)
@@ -724,7 +726,7 @@ export class CloudsNode extends TempNode {
       marchNode: this.marchNode,
       shadowNode: this.shadowNode,
       textureNode: this.textureNode
-    })
+    }) as ThreeNode
   }
 
   override dispose(): void {

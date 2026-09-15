@@ -17,7 +17,9 @@ export interface WgslCaptureResult {
   summaries: WgslModuleSummary[]
 }
 
-type CreateShaderModule = (descriptor: GPUShaderModuleDescriptor) => GPUShaderModule
+type CreateShaderModule = (
+  descriptor: GPUShaderModuleDescriptor
+) => GPUShaderModule
 
 function summarize(label: string, code: string): WgslModuleSummary {
   return {
@@ -75,7 +77,7 @@ export async function captureWgslModules(
     options.recompile()
     for (let i = 0; i < frames; ++i) {
       options.render()
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     }
   } finally {
     device.createShaderModule = original as GPUDevice['createShaderModule']
@@ -92,7 +94,7 @@ export async function captureWgslModules(
 
   return {
     modules,
-    summaries: modules.map((m) => summarize(m.label, m.code))
+    summaries: modules.map(m => summarize(m.label, m.code))
   }
 }
 
@@ -111,7 +113,8 @@ export function downloadWgslCapture(
   }
   console.log('WGSL dump' + (filePrefix ? ` [${filePrefix}]` : ''))
   console.table(result.summaries)
-  const prefix = filePrefix.length > 0 ? filePrefix.replace(/[^\w.-]+/g, '_') + '_' : ''
+  const prefix =
+    filePrefix.length > 0 ? filePrefix.replace(/[^\w.-]+/g, '_') + '_' : ''
   for (const [i, mod] of result.modules.entries()) {
     const blob = new Blob([mod.code], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)

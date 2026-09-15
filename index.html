@@ -41,6 +41,59 @@
         </label>
       </section>
 
+      <section class="control-group" aria-labelledby="layer-controls-heading">
+        <h2 id="layer-controls-heading">Layers</h2>
+        <p class="hint">Defaults: low (r), mid (g), high cirrus (b). Values are meters.</p>
+
+        <details open>
+          <summary>Low (r)</summary>
+          <label>
+            <span>Altitude <output id="layer-0-altitude-value">750</output> m</span>
+            <input id="layer-0-altitude" type="range" min="0" max="4000" step="50" value="750" />
+          </label>
+          <label>
+            <span>Height <output id="layer-0-height-value">650</output> m</span>
+            <input id="layer-0-height" type="range" min="50" max="3000" step="50" value="650" />
+          </label>
+          <label>
+            <span>Density <output id="layer-0-density-value">0.20</output></span>
+            <input id="layer-0-density" type="range" min="0" max="1" step="0.01" value="0.2" />
+          </label>
+        </details>
+
+        <details>
+          <summary>Mid (g)</summary>
+          <label>
+            <span>Altitude <output id="layer-1-altitude-value">1000</output> m</span>
+            <input id="layer-1-altitude" type="range" min="0" max="5000" step="50" value="1000" />
+          </label>
+          <label>
+            <span>Height <output id="layer-1-height-value">1200</output> m</span>
+            <input id="layer-1-height" type="range" min="50" max="4000" step="50" value="1200" />
+          </label>
+          <label>
+            <span>Density <output id="layer-1-density-value">0.20</output></span>
+            <input id="layer-1-density" type="range" min="0" max="1" step="0.01" value="0.2" />
+          </label>
+        </details>
+
+        <details>
+          <summary>High (b)</summary>
+          <label>
+            <span>Altitude <output id="layer-2-altitude-value">7500</output> m</span>
+            <input id="layer-2-altitude" type="range" min="2000" max="12000" step="100" value="7500" />
+          </label>
+          <label>
+            <span>Height <output id="layer-2-height-value">500</output> m</span>
+            <input id="layer-2-height" type="range" min="50" max="2000" step="50" value="500" />
+          </label>
+          <label>
+            <span>Density <output id="layer-2-density-value">0.003</output></span>
+            <input id="layer-2-density" type="range" min="0" max="0.05" step="0.001" value="0.003" />
+          </label>
+        </details>
+      </section>
+
       <section
         class="control-group"
         aria-labelledby="rendering-controls-heading"

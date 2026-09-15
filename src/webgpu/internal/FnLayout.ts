@@ -1,15 +1,16 @@
 // src/webgpu/internal/FnLayout.ts
 
-import type {
-  ProxiedTuple,
-  ShaderCallNodeInternal,
-  ShaderNodeFn,
-  Struct
-} from 'three/src/nodes/TSL.js'
+import type { ProxiedTuple } from 'three/src/nodes/TSL.js'
+import type { FnNode } from 'three/src/nodes/tsl/TSLCore.js'
 import { Fn } from 'three/tsl'
 import type { NodeBuilder, Texture3DNode, TextureNode } from 'three/webgpu'
 
 import type { Node, NodeType } from './node'
+
+/** Struct factory from three/tsl — keep loose: layout shape varies by three version. */
+type Struct = ((...args: never[]) => unknown) & {
+  layout?: { name?: string | null }
+}
 
 type FnLayoutType = NodeType | Struct | 'texture' | 'texture3D'
 
@@ -51,14 +52,14 @@ type FnLayoutResult<
 > = (
   callback: (
     ...args: [] extends Nodes ? [NodeBuilder] : [Nodes, NodeBuilder]
-  ) => InferNodeObject<T> | ShaderCallNodeInternal
-) => ShaderNodeFn<ProxiedTuple<Nodes>>
+  ) => InferNodeObject<T>
+) => FnNode<ProxiedTuple<Nodes>, InferNodeObject<T>>
 
 function transformType(type: FnLayoutType): string {
   if (typeof type === 'string') {
     return type
   }
-  if (type.layout.name == null) {
+  if (type.layout?.name == null) {
     throw new Error('Struct name is required.')
   }
   return type.layout.name
@@ -72,9 +73,9 @@ export function FnLayout<
   ...layout
 }: FnLayoutDefinition<T, Inputs>): FnLayoutResult<T, Inputs> {
   return typeOnly
-    ? callback => Fn(callback as any)
+    ? callback => Fn(callback as never) as never
     : callback =>
-        Fn(callback as any).setLayout({
+        Fn(callback as never).setLayout({
           ...layout,
           type: transformType(layout.type),
           inputs:
@@ -82,5 +83,5 @@ export function FnLayout<
               ...input,
               type: transformType(input.type)
             })) ?? []
-        })
+        }) as never
 }

@@ -1,7 +1,7 @@
 // src/webgpu/LocalWeatherNode.ts
 
 import { Vector2 } from 'three'
-import { float, Loop, smoothstep, vec3, vec4 } from 'three/tsl'
+import { float, int, Loop, smoothstep, vec3, vec4 } from 'three/tsl'
 import type { NodeBuilder } from 'three/webgpu'
 
 import { FnLayout } from './internal/FnLayout'
@@ -54,12 +54,12 @@ export class LocalWeatherNode extends ProceduralTextureNode {
     // Mid clouds
     {
       let worley = worleyFbm(
-        uv.add(vec3(0.5)),
-        8.0, // frequency
-        0.4, // amplitude
-        2.0, // lacunarity
-        0.95, // gain
-        4 // octaveCount
+        vec3(uv, 0).add(vec3(0.5)),
+        float(8.0), // frequency
+        float(0.4), // amplitude
+        float(2.0), // lacunarity
+        float(0.95), // gain
+        int(4) // octaveCount
       )
       worley = smoothstep(1.0, 1.4, worley)
       output.g.assign(worley)
@@ -68,12 +68,12 @@ export class LocalWeatherNode extends ProceduralTextureNode {
     // Low clouds
     {
       let worley = worleyFbm(
-        uv,
-        16.0, // frequency
-        0.4, // amplitude
-        2.0, // lacunarity
-        0.95, // gain
-        4 // octaveCount
+        vec3(uv, 0),
+        float(16.0), // frequency
+        float(0.4), // amplitude
+        float(2.0), // lacunarity
+        float(0.95), // gain
+        int(4) // octaveCount
       )
       worley = smoothstep(0.8, 1.4, worley)
       output.r.assign(worley.sub(output.g).saturate())
@@ -82,9 +82,9 @@ export class LocalWeatherNode extends ProceduralTextureNode {
     // High clouds
     {
       let perlin = stackablePerlinNoise(
-        uv,
+        vec3(uv, 0),
         vec3(6.0, 12.0, 1.0), // frequency
-        8 // octaveCount
+        int(8) // octaveCount
       )
       perlin = smoothstep(-0.5, 0.5, perlin)
       output.b.assign(perlin)
@@ -93,9 +93,9 @@ export class LocalWeatherNode extends ProceduralTextureNode {
     // Extra
     {
       let perlin = stackablePerlinNoise(
-        uv.add(vec3(-19.1, 33.4, 47.2)),
-        32.0, // frequency
-        4 // octaveCount
+        vec3(uv, 0).add(vec3(-19.1, 33.4, 47.2)),
+        vec3(32.0), // frequency
+        int(4) // octaveCount
       )
       perlin = smoothstep(-0.5, 0.5, perlin)
       output.a.assign(perlin)

@@ -1,27 +1,28 @@
+import type { Node as ThreeNode } from 'three/webgpu'
 // src/webgpu/ShadowMarchNode.ts
 
 import {
+  type Camera,
   HalfFloatType,
   LinearFilter,
   Matrix4,
   PerspectiveCamera,
   RenderTarget,
   RGBAFormat,
+  type Texture,
   Vector2,
-  Vector3,
-  type Camera,
-  type Texture
+  Vector3
 } from 'three'
 import { positionGeometry, screenUV, texture, vec4 } from 'three/tsl'
 import {
   MRTNode,
+  type NodeBuilder,
+  type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
   QuadMesh,
   RendererUtils,
   TempNode,
-  type NodeBuilder,
-  type NodeFrame,
   type TextureNode
 } from 'three/webgpu'
 
@@ -32,18 +33,18 @@ import type {
   CloudLayerParameterNodes,
   CloudParameterNodes
 } from './parameters'
-import {
-  MAX_SHADOW_CASCADES,
-  ShadowMarchParameters,
-  shadowMipLevels,
-  ShadowParameterNodes
-} from './shadowParameters'
 import { ShadowCascadeAtlas } from './ShadowCascadeAtlas'
 import { ShadowResolveNode } from './ShadowResolveNode'
 import {
+  MAX_SHADOW_CASCADES,
+  ShadowMarchParameters,
+  ShadowParameterNodes,
+  shadowMipLevels
+} from './shadowParameters'
+import {
+  type ShadowMarchColorContext,
   setupShadowMarchColor,
-  setupShadowMarchVelocity,
-  type ShadowMarchColorContext
+  setupShadowMarchVelocity
 } from './shadowSampling'
 
 const { resetRendererState, restoreRendererState } = RendererUtils
@@ -61,7 +62,7 @@ const { resetRendererState, restoreRendererState } = RendererUtils
  * 1 the depth-velocity buffer.
  */
 class ShadowMarchColorNode extends MRTNode {
-  static override get type(): string {
+  static get type(): string {
     return 'ShadowMarchColorNode'
   }
 
@@ -69,7 +70,7 @@ class ShadowMarchColorNode extends MRTNode {
     super({})
   }
 
-  override setup(builder: NodeBuilder): unknown {
+  override setup(builder: NodeBuilder): ThreeNode | null | undefined {
     const context: ShadowMarchColorContext = {
       parameters: this.owner.parameters,
       layers: this.owner.layers,
@@ -81,7 +82,7 @@ class ShadowMarchColorNode extends MRTNode {
     const velocity = setupShadowMarchVelocity(context, screenUV, color)
     // MRTNode.setup() resolves each output to a color attachment by name.
     this.outputNodes = { output: color, velocity }
-    return super.setup(builder)
+    return super.setup(builder) as ThreeNode | null | undefined
   }
 }
 
@@ -95,7 +96,7 @@ class ShadowMarchColorNode extends MRTNode {
  * would all land on the same layer.
  */
 export class ShadowMarchNode extends TempNode {
-  static override get type(): string {
+  static get type(): string {
     return 'ShadowMarchNode'
   }
 
@@ -211,7 +212,7 @@ export class ShadowMarchNode extends TempNode {
       const material = new NodeMaterial()
       material.name = `CloudsShadowMarch.${i}`
       material.vertexNode = vec4(positionGeometry.xy, 0, 1)
-      material.fragmentNode = new ShadowMarchColorNode(this)
+      material.fragmentNode = new ShadowMarchColorNode(this) as never
       material.needsUpdate = true
       this.materials.push(material)
       this.meshes.push(new QuadMesh(material))
@@ -381,7 +382,7 @@ export class ShadowMarchNode extends TempNode {
     this.lastPassTiming.atlas = tAtlas1 - tAtlas0
   }
 
-  override updateBefore(frame: NodeFrame): void {
+  override updateBefore(frame: NodeFrame): boolean | undefined {
     if (frame.renderer == null) {
       return
     }
@@ -390,9 +391,10 @@ export class ShadowMarchNode extends TempNode {
       return
     }
     this.renderShadowMaps(frame, camera)
+    return undefined
   }
 
-  override setup(builder: NodeBuilder): unknown {
+  override setup(builder: NodeBuilder): ThreeNode | null | undefined {
     this.resolveNode.build(builder)
     // Return the live resolve node: its texture target is ping-ponged each
     // frame by render(), so a captured OutputTextureNode would go stale.

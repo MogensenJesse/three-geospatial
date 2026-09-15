@@ -1,7 +1,7 @@
 // src/webgpu/CloudShapeDetailNode.ts
 
 import { vec2, vec3, vec4 } from 'three/tsl'
-import { Vector3, type NodeBuilder } from 'three/webgpu'
+import { type NodeBuilder, Vector3 } from 'three/webgpu'
 
 import { CLOUD_SHAPE_DETAIL_TEXTURE_SIZE } from '../constants'
 import type { Node } from './internal/node'

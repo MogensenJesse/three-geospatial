@@ -18,7 +18,12 @@ function getCache<T extends object>(
     cache = {}
     caches.set(object, cache)
   }
-  return (cache[name] ??= create()) as T
+  let value = cache[name]
+  if (value == null) {
+    value = create()
+    cache[name] = value
+  }
+  return value as T
 }
 
 export const viewMatrix = (camera: Camera): Node<'mat4'> =>

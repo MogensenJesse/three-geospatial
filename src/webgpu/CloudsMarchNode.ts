@@ -1,6 +1,8 @@
+import type { Node as ThreeNode } from 'three/webgpu'
 // src/webgpu/CloudsMarchNode.ts
 
 import {
+  type Camera,
   FloatType,
   HalfFloatType,
   LinearFilter,
@@ -9,31 +11,30 @@ import {
   NoBlending,
   RenderTarget,
   RGBAFormat,
-  Vector2,
-  type Camera,
-  type Texture
+  type Texture,
+  Vector2
 } from 'three'
 import { positionGeometry, texture, vec4 } from 'three/tsl'
 import {
   MRTNode,
+  type NodeBuilder,
+  type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
   QuadMesh,
   RendererUtils,
   TempNode,
-  type NodeBuilder,
-  type NodeFrame,
   type TextureNode
 } from 'three/webgpu'
 
 import { bayerOffsets } from '../bayer'
 import type { CloudsEnvironment } from './CloudsEnvironment'
-import { outputTexture } from './internal/OutputTextureNode'
-import { CloudsMarchParameters, setupCloudsMarch } from './march'
 import {
   cloudsMarchVariantKey,
   resolveCloudsMarchVariant
 } from './cloudsMarchVariant'
+import { outputTexture } from './internal/OutputTextureNode'
+import { CloudsMarchParameters, setupCloudsMarch } from './march'
 import type {
   CloudLayerParameterNodes,
   CloudParameterNodes
@@ -68,7 +69,7 @@ interface CloudsMarchDebug {
  * struct, which silently clears both attachments.
  */
 class CloudsMarchColorNode extends MRTNode {
-  static override get type(): string {
+  static get type(): string {
     return 'CloudsMarchColorNode'
   }
 
@@ -76,7 +77,7 @@ class CloudsMarchColorNode extends MRTNode {
     super({})
   }
 
-  override setup(builder: NodeBuilder): unknown {
+  override setup(builder: NodeBuilder): ThreeNode | null | undefined {
     const result = setupCloudsMarch(builder, {
       parameters: this.owner.parameters,
       layers: this.owner.layers,
@@ -90,7 +91,7 @@ class CloudsMarchColorNode extends MRTNode {
       output: result.get('color'),
       velocity: result.get('depthVelocity')
     }
-    return super.setup(builder)
+    return super.setup(builder) as ThreeNode | null | undefined
   }
 }
 
@@ -101,7 +102,7 @@ class CloudsMarchColorNode extends MRTNode {
  * {@link updateBeforeType} to FRAME and samples {@link getTextureNode}.
  */
 export class CloudsMarchNode extends TempNode {
-  static override get type(): string {
+  static get type(): string {
     return 'CloudsMarchNode'
   }
 
@@ -164,9 +165,15 @@ export class CloudsMarchNode extends TempNode {
     this.renderTarget.textures[1].magFilter = NearestFilter
     this.renderTarget.textures[1].name = 'velocity'
 
-    this.textureNode = outputTexture(this, this.renderTarget.textures[0])
+    this.textureNode = outputTexture(
+      this as never,
+      this.renderTarget.textures[0]
+    ) as unknown as TextureNode
     // Same owner hook as color so a velocity-only debug view still runs the march.
-    this.velocityNode = outputTexture(this, this.renderTarget.textures[1])
+    this.velocityNode = outputTexture(
+      this as never,
+      this.renderTarget.textures[1]
+    ) as unknown as TextureNode
     this.material.name = 'CloudsMarch'
     this.material.blending = NoBlending
     this.material.depthTest = false
@@ -185,7 +192,7 @@ export class CloudsMarchNode extends TempNode {
   }
 
   getTextureNode(): TextureNode {
-    return this.textureNode
+    return this.textureNode as unknown as TextureNode
   }
 
   getVelocityTextureNode(): TextureNode {
@@ -402,8 +409,9 @@ export class CloudsMarchNode extends TempNode {
     }
   }
 
-  override updateBefore(frame: NodeFrame): void {
+  override updateBefore(frame: NodeFrame): boolean | undefined {
     this.render(frame)
+    return undefined
   }
 
   /**
@@ -421,20 +429,20 @@ export class CloudsMarchNode extends TempNode {
       return this
     }
     this.lastVariantKey = key
-    this.material.fragmentNode = new CloudsMarchColorNode(this)
+    this.material.fragmentNode = new CloudsMarchColorNode(this) as never
     this.material.needsUpdate = true
     return this
   }
 
-  override setup(builder: NodeBuilder): unknown {
+  override setup(builder: NodeBuilder): ThreeNode | null | undefined {
     this.lastVariantKey = cloudsMarchVariantKey(
       resolveCloudsMarchVariant(this.march, this.shadowAtlas)
     )
     // Assign a deferred node — do not expand If/Loop into the parent builder.
-    this.material.fragmentNode = new CloudsMarchColorNode(this)
+    this.material.fragmentNode = new CloudsMarchColorNode(this) as never
     this.material.needsUpdate = true
 
-    return this.textureNode
+    return this.textureNode as unknown as TextureNode
   }
 
   override dispose(): void {

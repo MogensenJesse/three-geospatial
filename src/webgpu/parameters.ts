@@ -4,7 +4,7 @@ import { Vector2, Vector3, Vector4 } from 'three'
 import { uniform } from 'three/tsl'
 import type { Texture3DNode, TextureNode } from 'three/webgpu'
 
-type UniformOf<T> = ReturnType<typeof uniform<T>>
+type UniformOf<T> = ReturnType<typeof uniform> & { value: T }
 
 /**
  * TSL uniforms for cloud participating-medium and weather/shape parameters.

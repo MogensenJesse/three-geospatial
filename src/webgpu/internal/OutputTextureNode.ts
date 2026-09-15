@@ -1,11 +1,12 @@
+import type { Node as ThreeNode } from 'three/webgpu'
 // src/webgpu/internal/OutputTextureNode.ts
 
 import type { Texture } from 'three'
 import {
-  Texture3DNode,
-  TextureNode,
   type Node,
-  type NodeBuilder
+  type NodeBuilder,
+  Texture3DNode,
+  TextureNode
 } from 'three/webgpu'
 
 interface MatrixUpdateNode {
@@ -13,7 +14,7 @@ interface MatrixUpdateNode {
 }
 
 export class OutputTextureNode extends TextureNode {
-  static override get type(): string {
+  static get type(): string {
     return 'CloudsOutputTextureNode'
   }
 
@@ -25,7 +26,7 @@ export class OutputTextureNode extends TextureNode {
     ;(this as unknown as MatrixUpdateNode).setUpdateMatrix(false)
   }
 
-  override setup(builder: NodeBuilder): unknown {
+  override setup(builder: NodeBuilder): ThreeNode | null | undefined {
     this.owner.build(builder)
     return super.setup(builder)
   }
@@ -45,7 +46,7 @@ export class OutputTextureNode extends TextureNode {
 }
 
 export class OutputTexture3DNode extends Texture3DNode {
-  static override get type(): string {
+  static get type(): string {
     return 'CloudsOutputTexture3DNode'
   }
 
@@ -57,7 +58,7 @@ export class OutputTexture3DNode extends Texture3DNode {
     ;(this as unknown as MatrixUpdateNode).setUpdateMatrix(false)
   }
 
-  override setup(builder: NodeBuilder): unknown {
+  override setup(builder: NodeBuilder): ThreeNode | null | undefined {
     this.owner.build(builder)
     return super.setup(builder)
   }
