@@ -1,0 +1,369 @@
+// demo/bindCloudControls.ts
+
+import { MathUtils } from 'three/webgpu'
+
+import type { CloudsDebugOutput, QualityPreset } from '../src'
+import {
+  artDirectedSky,
+  artDirectedSun,
+  type IrradianceMode,
+  preethamBakeIrradiance
+} from './irradianceModes'
+
+export interface CloudControlsDeps {
+  animateWeatherInput: any
+  cloudNode: any
+  cloudShadowsInput: any
+  coverageInput: any
+  coverageOutput: HTMLOutputElement
+  debugOutputInput: any
+  exposureInput: any
+  exposureOutput: HTMLOutputElement
+  groundBounceInput: any
+  groundBounceOutput: HTMLOutputElement
+  groundMaterial: any
+  hemisphere: any
+  irradianceMode: any
+  irradianceModeInput: any
+  landmarkMaterial: any
+  layerControls: any
+  marchIterationsInput: any
+  marchIterationsOutput: HTMLOutputElement
+  multiScatterInput: any
+  multiScatterOutput: HTMLOutputElement
+  phaseFunctionInput: any
+  powderScaleInput: any
+  powderScaleOutput: HTMLOutputElement
+  qualityPresetInput: any
+  renderer: any
+  resolutionScaleInput: any
+  resolutionScaleOutput: HTMLOutputElement
+  sceneShadowsEnabled: any
+  sceneShadowsInput: any
+  shapeDetailInput: any
+  sky: any
+  sunDetailInput: any
+  sunDetailOutput: HTMLOutputElement
+  sunDirection: any
+  sunInput: any
+  sunOutput: HTMLOutputElement
+  sunlight: any
+  temporalHistoryInput: any
+  temporalUpscaleInput: any
+  turbulenceInput: any
+  updateDebugOutput: () => void
+  updateTemporalHistory: any
+}
+
+export function bindCloudControls(deps: CloudControlsDeps): {
+  dispose: () => void
+} {
+  const {
+    animateWeatherInput,
+    cloudNode,
+    cloudShadowsInput,
+    coverageInput,
+    coverageOutput,
+    debugOutputInput,
+    exposureInput,
+    exposureOutput,
+    groundBounceInput,
+    groundBounceOutput,
+    groundMaterial,
+    hemisphere,
+    irradianceModeInput,
+    landmarkMaterial,
+    layerControls,
+    marchIterationsInput,
+    marchIterationsOutput,
+    multiScatterInput,
+    multiScatterOutput,
+    phaseFunctionInput,
+    powderScaleInput,
+    powderScaleOutput,
+    qualityPresetInput,
+    renderer,
+    resolutionScaleInput,
+    resolutionScaleOutput,
+    sceneShadowsEnabled,
+    sceneShadowsInput,
+    shapeDetailInput,
+    sky,
+    sunDetailInput,
+    sunDetailOutput,
+    sunDirection,
+    sunInput,
+    sunOutput,
+    sunlight,
+    temporalHistoryInput,
+    temporalUpscaleInput,
+    turbulenceInput,
+    updateDebugOutput,
+    updateTemporalHistory
+  } = deps
+
+  let irradianceMode: IrradianceMode = deps.irradianceMode
+
+  const syncQualityControlsFromNode = (): void => {
+    resolutionScaleInput.value = String(cloudNode.resolutionScale)
+    resolutionScaleOutput.value = `${Math.round(cloudNode.resolutionScale * 100)}%`
+    temporalUpscaleInput.checked = cloudNode.temporalUpscale
+    shapeDetailInput.checked = cloudNode.shapeDetailEnabled
+    turbulenceInput.checked = cloudNode.turbulenceEnabled
+    sunDetailInput.value = String(cloudNode.secondaryIterationCount)
+    sunDetailOutput.value = String(
+      Math.round(Number(cloudNode.secondaryIterationCount))
+    )
+    marchIterationsInput.value = String(
+      cloudNode.marchNode.march.maxIterationCount.value
+    )
+    marchIterationsOutput.value = String(
+      Math.round(Number(cloudNode.marchNode.march.maxIterationCount.value))
+    )
+    multiScatterInput.value = String(
+      cloudNode.marchNode.march.multiScatteringOctaves.value
+    )
+    multiScatterOutput.value = String(
+      Math.round(Number(cloudNode.marchNode.march.multiScatteringOctaves.value))
+    )
+    powderScaleInput.value = String(cloudNode.powderScale)
+    powderScaleOutput.value = cloudNode.powderScale.toFixed(2)
+    groundBounceInput.value = String(cloudNode.groundBounceScale)
+    groundBounceOutput.value = cloudNode.groundBounceScale.toFixed(2)
+    phaseFunctionInput.value = cloudNode.phaseFunctionMode
+  }
+
+  const updateQualityPreset = (): void => {
+    cloudNode.setQualityPreset(qualityPresetInput.value as QualityPreset)
+    syncQualityControlsFromNode()
+    // CloudShadowNode may have captured atlas at setup; force host rebind.
+    groundMaterial.needsUpdate = true
+    landmarkMaterial.needsUpdate = true
+  }
+
+  const updateCoverage = (): void => {
+    const coverage = Number(coverageInput.value)
+    cloudNode.coverage = coverage
+    coverageOutput.value = coverage.toFixed(2)
+  }
+
+  const syncLayerControlsFromNode = (): void => {
+    for (const ctrl of layerControls) {
+      const layer = cloudNode.cloudLayers[ctrl.index]
+      ctrl.altitude.value = String(layer.altitude)
+      ctrl.altitudeOut.value = String(Math.round(layer.altitude))
+      ctrl.height.value = String(layer.height)
+      ctrl.heightOut.value = String(Math.round(layer.height))
+      ctrl.density.value = String(layer.densityScale)
+      ctrl.densityOut.value =
+        layer.densityScale < 0.01
+          ? layer.densityScale.toFixed(3)
+          : layer.densityScale.toFixed(2)
+    }
+  }
+
+  const updateLayerFromControls = (index: number): void => {
+    const ctrl = layerControls[index]
+    const layer = cloudNode.cloudLayers[index]
+    layer.altitude = Number(ctrl.altitude.value)
+    layer.height = Number(ctrl.height.value)
+    layer.densityScale = Number(ctrl.density.value)
+    ctrl.altitudeOut.value = String(Math.round(layer.altitude))
+    ctrl.heightOut.value = String(Math.round(layer.height))
+    ctrl.densityOut.value =
+      layer.densityScale < 0.01
+        ? layer.densityScale.toFixed(3)
+        : layer.densityScale.toFixed(2)
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateAnimation = (): void => {
+    cloudNode.localWeatherVelocity.set(
+      animateWeatherInput.checked ? 0.001 : 0,
+      0
+    )
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateResolutionScale = (): void => {
+    const resolutionScale = Number(resolutionScaleInput.value)
+    cloudNode.resolutionScale = resolutionScale
+    resolutionScaleOutput.value = `${Math.round(resolutionScale * 100)}%`
+  }
+
+  const updateTemporalUpscale = (): void => {
+    cloudNode.temporalUpscale = temporalUpscaleInput.checked
+  }
+
+  const updateShapeDetail = (): void => {
+    cloudNode.shapeDetailEnabled = shapeDetailInput.checked
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateTurbulence = (): void => {
+    cloudNode.turbulenceEnabled = turbulenceInput.checked
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateCloudShadows = (): void => {
+    cloudNode.shadowEnabled = cloudShadowsInput.checked
+  }
+
+  const updateSceneShadows = (): void => {
+    sceneShadowsEnabled.value = sceneShadowsInput.checked ? 1 : 0
+  }
+
+  const applyIrradianceMode = (): void => {
+    const env = cloudNode.environment
+    const elev = Number(sunInput.value)
+    if (irradianceMode === 'preethamBake') {
+      preethamBakeIrradiance(elev, env.sunIrradiance, env.skyIrradiance)
+    } else {
+      env.sunIrradiance.copy(artDirectedSun)
+      env.skyIrradiance.copy(artDirectedSky)
+    }
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateIrradianceMode = (): void => {
+    irradianceMode = irradianceModeInput.value as IrradianceMode
+    if (irradianceMode === 'takram') {
+      console.warn('[demo] takram mode blocked — falling back to artDirected.')
+      irradianceMode = 'artDirected'
+      irradianceModeInput.value = 'artDirected'
+    }
+    const url = new URL(location.href)
+    url.searchParams.set('irradiance', irradianceMode)
+    history.replaceState(null, '', url)
+    applyIrradianceMode()
+  }
+
+  const updateSunAndIrradiance = (): void => {
+    updateSun()
+    applyIrradianceMode()
+  }
+
+  const updateSun = (): void => {
+    const elevation = Number(sunInput.value)
+    sunOutput.value = `${Math.round(elevation)}°`
+
+    sunDirection.setFromSphericalCoords(
+      1,
+      MathUtils.degToRad(90 - elevation),
+      MathUtils.degToRad(135)
+    )
+    sky.sunPosition.value.copy(sunDirection)
+
+    const daylight = MathUtils.smoothstep(sunDirection.y, 0, 0.65)
+    cloudNode.environment.sunDirection.copy(sunDirection)
+    cloudNode.environment.sunIrradiance
+      .set(15, 12.5, 10)
+      .multiplyScalar(0.15 + daylight * 0.85)
+    cloudNode.environment.skyIrradiance
+      .set(0.38, 0.5, 0.72)
+      .multiplyScalar(0.35 + daylight * 0.65)
+
+    sunlight.position.copy(sunDirection).multiplyScalar(10_000)
+    sunlight.intensity = 1 + daylight * 4
+    hemisphere.intensity = 0.5 + daylight
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateSunDetail = (): void => {
+    const samples = Number(sunDetailInput.value)
+    cloudNode.secondaryIterationCount = samples
+    sunDetailOutput.value = String(samples)
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateMarchIterations = (): void => {
+    const iterations = Number(marchIterationsInput.value)
+    cloudNode.marchNode.march.maxIterationCount.value = iterations
+    marchIterationsOutput.value = String(iterations)
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateMultiScatter = (): void => {
+    const octaves = Number(multiScatterInput.value)
+    cloudNode.marchNode.march.multiScatteringOctaves.value = octaves
+    multiScatterOutput.value = String(octaves)
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updatePowderScale = (): void => {
+    const scale = Number(powderScaleInput.value)
+    cloudNode.powderScale = scale
+    powderScaleOutput.value = scale.toFixed(2)
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateGroundBounce = (): void => {
+    const scale = Number(groundBounceInput.value)
+    cloudNode.groundBounceScale = scale
+    groundBounceOutput.value = scale.toFixed(2)
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updatePhaseFunction = (): void => {
+    cloudNode.phaseFunctionMode = phaseFunctionInput.value as
+      | 'approximate'
+      | 'accurate'
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateExposure = (): void => {
+    const exposure = Number(exposureInput.value)
+    renderer.toneMappingExposure = exposure
+    exposureOutput.value = exposure.toFixed(2)
+  }
+
+  coverageInput.addEventListener('input', updateCoverage)
+  for (const ctrl of layerControls) {
+    const idx = ctrl.index
+    const onLayer = (): void => {
+      updateLayerFromControls(idx)
+    }
+    ctrl.altitude.addEventListener('input', onLayer)
+    ctrl.height.addEventListener('input', onLayer)
+    ctrl.density.addEventListener('input', onLayer)
+  }
+  animateWeatherInput.addEventListener('change', updateAnimation)
+  qualityPresetInput.addEventListener('change', updateQualityPreset)
+  resolutionScaleInput.addEventListener('change', updateResolutionScale)
+  temporalUpscaleInput.addEventListener('change', updateTemporalUpscale)
+  shapeDetailInput.addEventListener('change', updateShapeDetail)
+  turbulenceInput.addEventListener('change', updateTurbulence)
+  cloudShadowsInput.addEventListener('change', updateCloudShadows)
+  sceneShadowsInput.addEventListener('change', updateSceneShadows)
+  debugOutputInput.addEventListener('change', updateDebugOutput)
+  temporalHistoryInput.addEventListener('change', updateTemporalHistory)
+  sunDetailInput.addEventListener('input', updateSunDetail)
+  marchIterationsInput.addEventListener('input', updateMarchIterations)
+  multiScatterInput.addEventListener('input', updateMultiScatter)
+  powderScaleInput.addEventListener('input', updatePowderScale)
+  groundBounceInput.addEventListener('input', updateGroundBounce)
+  phaseFunctionInput.addEventListener('change', updatePhaseFunction)
+  sunInput.addEventListener('input', updateSunAndIrradiance)
+  irradianceModeInput.addEventListener('change', updateIrradianceMode)
+  exposureInput.addEventListener('input', updateExposure)
+  updateCoverage()
+  syncLayerControlsFromNode()
+  updateAnimation()
+  updateQualityPreset()
+  updateCloudShadows()
+  updateSceneShadows()
+  updateDebugOutput()
+  temporalHistoryInput.checked = true
+  updateTemporalHistory()
+  updateSun()
+  artDirectedSun.copy(cloudNode.environment.sunIrradiance)
+  artDirectedSky.copy(cloudNode.environment.skyIrradiance)
+  applyIrradianceMode()
+  updateExposure()
+
+  return {
+    dispose: () => {
+      // Demo page unload owns full teardown; listeners die with the document.
+    }
+  }
+}

@@ -38,6 +38,7 @@ import {
   measureCloudsPassTiming,
   setupCloudsDebugOutput
 } from './cloudsDebug'
+import { installCloudsNodeTuning } from './cloudsNodeTuning'
 import type { Node } from './internal/node'
 import { LocalWeatherNode } from './LocalWeatherNode'
 import { CloudLayerParameterNodes, CloudParameterNodes } from './parameters'
@@ -53,6 +54,37 @@ export type { CloudsDebugOutput, CloudsPassTiming } from './cloudsDebug'
  * overlay texture for composition (or a diagnostic view when selected).
  */
 export class CloudsNode extends TempNode {
+  declare depthNode: TextureNode | null
+  declare resolutionScale: number
+  declare temporalUpscale: boolean
+  declare temporalAlpha: number
+  declare temporalHistoryEnabled: boolean
+  declare varianceGamma: number
+  declare shapeDetailEnabled: boolean
+  declare turbulenceEnabled: boolean
+  declare scatteringCoefficient: number
+  declare absorptionCoefficient: number
+  declare turbulenceDisplacement: number
+  declare localWeatherRepeat: Vector2
+  declare localWeatherOffset: Vector2
+  declare shapeRepeat: Vector3
+  declare shapeOffset: Vector3
+  declare shapeDetailRepeat: Vector3
+  declare shapeDetailOffset: Vector3
+  declare turbulenceRepeat: Vector2
+  declare secondaryIterationCount: number
+  declare powderScale: number
+  declare powderExponent: number
+  declare groundBounceScale: number
+  declare groundIterationCount: number
+  declare phaseFunctionMode: PhaseFunctionMode
+  declare shadowEnabled: boolean
+  declare shadowMapSize: number
+  declare shadowCascadeCount: number
+  declare shadowFilterRadius: number
+  declare shadowTemporalAlpha: number
+  declare shadowTemporalGamma: number
+
   static get type(): string {
     return 'CloudsNode'
   }
@@ -378,57 +410,6 @@ export class CloudsNode extends TempNode {
     return this._debugOutput === 'none' ? null : this
   }
 
-  get depthNode(): TextureNode | null {
-    return this.environment.sceneDepth
-  }
-
-  set depthNode(value: TextureNode | null) {
-    this.environment.sceneDepth = value
-  }
-
-  get resolutionScale(): number {
-    return this.marchNode.resolutionScale
-  }
-
-  set resolutionScale(value: number) {
-    if (value !== this.marchNode.resolutionScale) {
-      this.marchNode.resolutionScale = value
-      this.resetTemporalHistory()
-    }
-  }
-
-  get temporalUpscale(): boolean {
-    return this.resolveNode.temporalUpscale
-  }
-
-  set temporalUpscale(value: boolean) {
-    if (value !== this.resolveNode.temporalUpscale) {
-      this.resolveNode.temporalUpscale = value
-      this.marchNode.temporalUpscale = value
-      this.resetTemporalHistory()
-    }
-  }
-
-  get temporalAlpha(): number {
-    return this.resolveNode.temporalAlpha.value
-  }
-
-  set temporalAlpha(value: number) {
-    this.resolveNode.temporalAlpha.value = value
-  }
-
-  /** When false, cloud temporal resolve never reuses history (debug). */
-  get temporalHistoryEnabled(): boolean {
-    return this.resolveNode.historyEnabled
-  }
-
-  set temporalHistoryEnabled(value: boolean) {
-    if (value !== this.resolveNode.historyEnabled) {
-      this.resolveNode.historyEnabled = value
-      this.resetTemporalHistory()
-    }
-  }
-
   getMarchRenderSize(target: Vector2): Vector2 {
     return this.marchNode.getRenderSize(target)
   }
@@ -465,199 +446,6 @@ export class CloudsNode extends TempNode {
       shadowEnabled: this.shadowEnabled,
       timing: this.lastPassTiming
     }
-  }
-
-  get varianceGamma(): number {
-    return this.resolveNode.varianceGamma.value
-  }
-
-  set varianceGamma(value: number) {
-    this.resolveNode.varianceGamma.value = value
-  }
-
-  get shapeDetailEnabled(): boolean {
-    return Boolean(this.parameters.shapeDetailEnabled.value)
-  }
-
-  set shapeDetailEnabled(value: boolean) {
-    this.parameters.shapeDetailEnabled.value = value
-  }
-
-  get turbulenceEnabled(): boolean {
-    return Boolean(this.parameters.turbulenceEnabled.value)
-  }
-
-  set turbulenceEnabled(value: boolean) {
-    this.parameters.turbulenceEnabled.value = value
-  }
-
-  get scatteringCoefficient(): number {
-    return this.parameters.scatteringCoefficient.value
-  }
-
-  set scatteringCoefficient(value: number) {
-    this.parameters.scatteringCoefficient.value = value
-  }
-
-  get absorptionCoefficient(): number {
-    return this.parameters.absorptionCoefficient.value
-  }
-
-  set absorptionCoefficient(value: number) {
-    this.parameters.absorptionCoefficient.value = value
-  }
-
-  get turbulenceDisplacement(): number {
-    return this.parameters.turbulenceDisplacement.value
-  }
-
-  set turbulenceDisplacement(value: number) {
-    this.parameters.turbulenceDisplacement.value = value
-  }
-
-  get localWeatherRepeat(): Vector2 {
-    return this.parameters.localWeatherRepeat.value
-  }
-
-  get localWeatherOffset(): Vector2 {
-    return this.parameters.localWeatherOffset.value
-  }
-
-  get shapeRepeat(): Vector3 {
-    return this.parameters.shapeRepeat.value
-  }
-
-  get shapeOffset(): Vector3 {
-    return this.parameters.shapeOffset.value
-  }
-
-  get shapeDetailRepeat(): Vector3 {
-    return this.parameters.shapeDetailRepeat.value
-  }
-
-  get shapeDetailOffset(): Vector3 {
-    return this.parameters.shapeDetailOffset.value
-  }
-
-  get turbulenceRepeat(): Vector2 {
-    return this.parameters.turbulenceRepeat.value
-  }
-
-  get secondaryIterationCount(): number {
-    return this.marchNode.march.maxIterationCountToSun.value
-  }
-
-  set secondaryIterationCount(value: number) {
-    this.marchNode.march.maxIterationCountToSun.value = value
-  }
-
-  get powderScale(): number {
-    return this.marchNode.march.powderScale.value
-  }
-
-  set powderScale(value: number) {
-    this.marchNode.march.powderScale.value = value
-  }
-
-  get powderExponent(): number {
-    return this.marchNode.march.powderExponent.value
-  }
-
-  set powderExponent(value: number) {
-    this.marchNode.march.powderExponent.value = value
-  }
-
-  get groundBounceScale(): number {
-    return this.marchNode.march.groundBounceScale.value
-  }
-
-  set groundBounceScale(value: number) {
-    this.marchNode.march.groundBounceScale.value = value
-  }
-
-  get groundIterationCount(): number {
-    return this.marchNode.march.maxIterationCountToGround.value
-  }
-
-  set groundIterationCount(value: number) {
-    this.marchNode.march.maxIterationCountToGround.value = value
-  }
-
-  get phaseFunctionMode(): PhaseFunctionMode {
-    return this.marchNode.march.phaseFunctionMode.value === 1
-      ? 'accurate'
-      : 'approximate'
-  }
-
-  set phaseFunctionMode(value: PhaseFunctionMode) {
-    this.marchNode.march.phaseFunctionMode.value = value === 'accurate' ? 1 : 0
-  }
-
-  get shadowEnabled(): boolean {
-    return this.shadowNode.enabled
-  }
-
-  set shadowEnabled(value: boolean) {
-    this.shadowNode.enabled = value
-    this.shadowNode.shadow.enabled.value = value ? 1 : 0
-    this.marchNode.shadowAtlas = value ? this.shadowNode.getAtlasNode() : null
-    this.marchNode.invalidateMaterial()
-    this.shadowNode.resolveNode.reset()
-    this.resetTemporalHistory()
-  }
-
-  get shadowMapSize(): number {
-    return this.shadowNode.shadowMaps.mapSize.x
-  }
-
-  set shadowMapSize(value: number) {
-    const previous = this.shadowNode.shadowMaps.mapSize.x
-    this.shadowNode.setMapSize(value)
-    if (value !== previous) {
-      this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
-      this.marchNode.invalidateMaterial()
-      this.shadowNode.resolveNode.reset()
-      this.resetTemporalHistory()
-    }
-  }
-
-  get shadowCascadeCount(): number {
-    return this.shadowNode.shadowMaps.cascadeCount
-  }
-
-  set shadowCascadeCount(value: number) {
-    const previous = this.shadowNode.shadowMaps.cascadeCount
-    this.shadowNode.setCascadeCount(value)
-    if (value !== previous) {
-      this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
-      this.marchNode.invalidateMaterial()
-      this.shadowNode.resolveNode.reset()
-      this.resetTemporalHistory()
-    }
-  }
-
-  get shadowFilterRadius(): number {
-    return this.shadowNode.shadow.maxShadowFilterRadius.value
-  }
-
-  set shadowFilterRadius(value: number) {
-    this.shadowNode.shadow.maxShadowFilterRadius.value = value
-  }
-
-  get shadowTemporalAlpha(): number {
-    return this.shadowNode.resolveNode.temporalAlpha.value
-  }
-
-  set shadowTemporalAlpha(value: number) {
-    this.shadowNode.resolveNode.temporalAlpha.value = value
-  }
-
-  get shadowTemporalGamma(): number {
-    return this.shadowNode.resolveNode.varianceGamma.value
-  }
-
-  set shadowTemporalGamma(value: number) {
-    this.shadowNode.resolveNode.varianceGamma.value = value
   }
 
   resetTemporalHistory(): this {
@@ -741,6 +529,10 @@ export class CloudsNode extends TempNode {
     super.dispose()
   }
 }
+
+installCloudsNodeTuning(
+  CloudsNode.prototype as unknown as import('./cloudsNodeTuning').CloudsNodeTuningHost
+)
 
 export const clouds = (options: CloudsOptions): CloudsNode =>
   new CloudsNode(options)
