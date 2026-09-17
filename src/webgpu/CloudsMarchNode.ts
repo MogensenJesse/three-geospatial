@@ -258,7 +258,10 @@ export class CloudsMarchNode extends TempNode {
     const rangeCamera = camera as Camera & { near: number; far: number }
     march.cameraNear.value = rangeCamera.near
     march.cameraFar.value = rangeCamera.far
-    march.frame.value = this.frame
+    march.frame.value = this.temporalUpscale ? this.frame : 0
+    march.temporalUpscaleAmount.value = this.temporalUpscale ? 1 : 0
+    // Full-res path: denser steps so the thin high layer (≈500 m) does not onion-skin.
+    march.stepSizeScale.value = this.temporalUpscale ? 1 : 0.35
 
     let dx = 0
     let dy = 0

@@ -32,6 +32,13 @@ import {
   type QualityPreset
 } from '../src'
 import {
+  artDirectedSky,
+  artDirectedSun,
+  irradianceModeFromLocation,
+  preethamBakeIrradiance,
+  type IrradianceMode
+} from './irradianceModes'
+import {
   accumulatePassTiming,
   createPassTimingEma,
   formatPassStats
@@ -136,6 +143,16 @@ async function main(): Promise<void> {
   )
   const phaseFunctionInput = requireElement<HTMLSelectElement>('phase-function')
   const sunInput = requireElement<HTMLInputElement>('sun-elevation')
+  const irradianceModeInput =
+    requireElement<HTMLSelectElement>('irradiance-mode')
+  let irradianceMode: IrradianceMode = irradianceModeFromLocation()
+  if (irradianceMode === 'takram') {
+    console.warn(
+      '[demo] irradiance=takram blocked (no atmosphere in standalone demo). Using artDirected. Compare via storybook-webgpu Clouds-Basic.'
+    )
+    irradianceMode = 'artDirected'
+  }
+  irradianceModeInput.value = irradianceMode
   const sunOutput = requireElement<HTMLOutputElement>('sun-value')
   const exposureInput = requireElement<HTMLInputElement>('exposure')
   const exposureOutput = requireElement<HTMLOutputElement>('exposure-value')
@@ -461,6 +478,39 @@ async function main(): Promise<void> {
     sceneShadowsEnabled.value = sceneShadowsInput.checked ? 1 : 0
   }
 
+
+  const applyIrradianceMode = (): void => {
+    const env = cloudNode.environment
+    const elev = Number(sunInput.value)
+    if (irradianceMode === 'preethamBake') {
+      preethamBakeIrradiance(elev, env.sunIrradiance, env.skyIrradiance)
+    } else {
+      env.sunIrradiance.copy(artDirectedSun)
+      env.skyIrradiance.copy(artDirectedSky)
+    }
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateIrradianceMode = (): void => {
+    irradianceMode = irradianceModeInput.value as IrradianceMode
+    if (irradianceMode === 'takram') {
+      console.warn(
+        '[demo] takram mode blocked — falling back to artDirected.'
+      )
+      irradianceMode = 'artDirected'
+      irradianceModeInput.value = 'artDirected'
+    }
+    const url = new URL(location.href)
+    url.searchParams.set('irradiance', irradianceMode)
+    history.replaceState(null, '', url)
+    applyIrradianceMode()
+  }
+
+  const updateSunAndIrradiance = (): void => {
+    updateSun()
+    applyIrradianceMode()
+  }
+
   const updateSun = (): void => {
     const elevation = Number(sunInput.value)
     sunOutput.value = `${Math.round(elevation)}°`
@@ -561,7 +611,8 @@ async function main(): Promise<void> {
   powderScaleInput.addEventListener('input', updatePowderScale)
   groundBounceInput.addEventListener('input', updateGroundBounce)
   phaseFunctionInput.addEventListener('change', updatePhaseFunction)
-  sunInput.addEventListener('input', updateSun)
+  sunInput.addEventListener('input', updateSunAndIrradiance)
+  irradianceModeInput.addEventListener('change', updateIrradianceMode)
   exposureInput.addEventListener('input', updateExposure)
   updateCoverage()
   syncLayerControlsFromNode()
@@ -570,8 +621,12 @@ async function main(): Promise<void> {
   updateCloudShadows()
   updateSceneShadows()
   updateDebugOutput()
+  temporalHistoryInput.checked = true
   updateTemporalHistory()
   updateSun()
+  artDirectedSun.copy(cloudNode.environment.sunIrradiance)
+  artDirectedSky.copy(cloudNode.environment.skyIrradiance)
+  applyIrradianceMode()
   updateExposure()
 
   const stats = new Stats()
@@ -638,7 +693,8 @@ async function main(): Promise<void> {
       powderScaleInput.removeEventListener('input', updatePowderScale)
       groundBounceInput.removeEventListener('input', updateGroundBounce)
       phaseFunctionInput.removeEventListener('change', updatePhaseFunction)
-      sunInput.removeEventListener('input', updateSun)
+      sunInput.removeEventListener('input', updateSunAndIrradiance)
+      irradianceModeInput.removeEventListener('change', updateIrradianceMode)
       exposureInput.removeEventListener('input', updateExposure)
       stats.dom.remove()
       controls.dispose()

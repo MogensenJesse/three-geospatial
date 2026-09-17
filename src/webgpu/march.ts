@@ -4,9 +4,11 @@
 import { Matrix4, Vector2 } from 'three'
 import {
   Break,
+  dot,
   exp,
   Fn,
   float,
+  fract,
   If,
   int,
   interleavedGradientNoise,
@@ -19,6 +21,7 @@ import {
   remapClamp,
   screenCoordinate,
   screenUV,
+  sin,
   struct,
   textureSize,
   uniform,
@@ -128,6 +131,10 @@ export class CloudsMarchParameters {
   readonly resolution = uniform(new Vector2(1, 1)).setName('cloudsResolution')
   /** Host frame index for optional STBN jitter. */
   readonly frame = uniform(0, 'int').setName('cloudsFrame')
+  /** 1 when Bayer TAAU is on; 0 freezes march jitter at 0.5. */
+  readonly temporalUpscaleAmount = uniform(0).setName('cloudsTemporalUpscaleAmount')
+  /** <1 densifies steps when TAAU is off (thin high-layer onion-skin). */
+  readonly stepSizeScale = uniform(1).setName('cloudsStepSizeScale')
 }
 
 const henyeyGreenstein = /*#__PURE__*/ FnLayout({
@@ -368,7 +375,8 @@ export function setupCloudsMarch(
         .mul(rayDirection)
         .add(cameraPosition)
         .toVar()
-      // Prefer host STBN when provided; otherwise hash jitter.
+      // Ray-start jitter: screen STBN/IGN. With history on + TAAU off, TAA
+      // damps crawl; world-space hashes correlated into horizon onion rings.
       const jitter = float(0).toVar()
       if (parameters.stbnTexture != null) {
         const stbn = parameters.stbnTexture
@@ -409,7 +417,7 @@ export function setupCloudsMarch(
       const stepSize = march.minStepSize
         .mul(worldScale)
         .add(march.perspectiveStepScale.sub(1).mul(rayNearFar.x))
-        .toVar()
+        .mul(march.stepSizeScale).toVar()
       const rayDistance = stepSize.mul(jitter).mul(2).toVar()
       const rayStartTexelsPerPixel = pow(2, mipLevel)
 
@@ -440,7 +448,7 @@ export function setupCloudsMarch(
           )
             .log2()
             .toVar()
-          const maxStepWorld = march.maxStepSize.mul(worldScale)
+          const maxStepWorld = march.maxStepSize.mul(worldScale).mul(march.stepSizeScale)
 
           If(
             insideLayerIntervals(

@@ -124,7 +124,7 @@
 
         <label class="toggle">
           <span>Temporal upscaling</span>
-          <input id="temporal-upscale" type="checkbox" checked />
+          <input id="temporal-upscale" type="checkbox" />
         </label>
 
         <label class="toggle">
@@ -261,6 +261,16 @@
 
       <details class="control-group" id="diagnostics" open>
         <summary id="diagnostics-heading">Diagnostics</summary>
+
+        <label>
+          <span>Irradiance mode</span>
+          <select id="irradiance-mode">
+            <option value="artDirected" selected>Art-directed</option>
+            <option value="preethamBake">Preetham bake</option>
+            <option value="takram" disabled>Takram (needs atmosphere dep)</option>
+          </select>
+        </label>
+
 
         <label>
           <span>Debug output</span>
