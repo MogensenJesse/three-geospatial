@@ -46,7 +46,7 @@ Default probe preset: **high** (`webglHighReference`): `resolutionScale = 1`, `t
 
 | Knob | WebGL | This checkout | Action |
 |--|--|--|--|
-| `varianceGamma` | **2** (`CloudsResolveMaterial`) | **1.5** (`CloudsResolveNode`) | **Verified.** Match **2** first; A/B still grain |
+| `varianceGamma` | **2** (`CloudsResolveMaterial`) | **1.5** (`CloudsResolveNode`) | **Done (2026-09-18):** default set to **2**; Jesse smoke still grain vs WebGL |
 | `temporalAlpha` | 0.1 (non-TAAU / classic TAA) | 0.1 | Keep; TAAU phase-write path does not use this blend the same way |
 | March scale | `ceil(W/4)` when TAAU | `ceil(scaled/4)` + logical `x4` | **Verified** in `CloudsMarchNode.setSize` |
 | Bayer 16-phase | `bayerOffsets` | Ported + **Y flip** (`oy = 1 - offset.y`, jitter `-dy`) | **Verified** vs resolve `flat[y*4+x]` |
@@ -190,3 +190,15 @@ Checked plan text against live `webgpu/clouds` HEAD and `git show main:packages/
 **Order still correct:** harness → temporal (gamma/velocity) → march → lighting/BSM → polish. Do not skip to lighting while gamma is 1.5 and pans smear.
 
 **Residual risks:** Bayer phase vs jitter Y mismatch under resize; quality-preset stomping TAAU/history; art-directed irradiance ≠ atmosphere LUTs (intentional gap).
+
+---
+
+## Status log
+
+| When | Phase | Note |
+|--|--|--|
+| 2026-09-18 | **1a done** | `CloudsResolveNode.varianceGamma` default **1.5 → 2** (HEAD `a9d0b998` tip may include plan commit; change may still be uncommitted per QA). Next: Jesse smoke still grain; then **1b** velocity/Y if pans still smear. |
+| 2026-09-18 | **1b partial** | Y/sign OK (no wrong-way ghosts). Linger remains → dial motion lean / snap-to-current; hold full 1b tick until that pass. |
+| 2026-09-18 | **1b Y A/B** | Removed march `prevUv` Y negate → history stopped accumulating. **Revert** — original Y flip confirmed. | Jesse smoke **passed** (still grain OK); ghosting still open → **1b**.
+
+**Next up:** 1b follow-up — motion lean / linger (Y done). Full 1b tick after Jesse OK.

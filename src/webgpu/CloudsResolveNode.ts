@@ -240,7 +240,7 @@ class CloudsResolveColorNode extends TempNode {
 
           const historyReproj = texture(owner.historyNode, prevUv, int(0))
           // WebGL TAAU: variance-clip history; on miss fall back to current
-          // (not same-UV history — that leaves infinite motion trails).
+          // (not same-UV history - that leaves infinite motion trails).
           const clipped = varianceClippingUV(
             owner.inputNode,
             screenUV,
@@ -248,7 +248,14 @@ class CloudsResolveColorNode extends TempNode {
             historyReproj,
             owner.varianceGamma
           )
-          const historySample = inside.select(clipped, current)
+          // Phase 1b: hard-cut ghosts. OOB -> current; fast UV motion -> lean to
+          // current (gamma=2 keeps soft stills). Prove Y with debugOutput=velocity.
+          const speed = closest.g.abs().add(closest.b.abs())
+          const motion = speed.smoothstep(float(0.002), float(0.014)).mul(speed.smoothstep(float(0.002), float(0.014))) // 1b follow-up: harder linger cut
+          const historySample = inside.select(
+            mix(clipped, current, motion),
+            current
+          )
           outputColor.assign(mix(current, historySample, owner.historyValid))
         })
       }).Else(() => {
@@ -271,9 +278,12 @@ class CloudsResolveColorNode extends TempNode {
           history,
           float(1)
         )
+        // Phase 1b: same motion hard-cut on full-res TAA path.
+        const speed = closest.g.abs().add(closest.b.abs())
+        const motion = speed.smoothstep(float(0.002), float(0.014)).mul(speed.smoothstep(float(0.002), float(0.014))) // 1b follow-up: harder linger cut
         const temporal = mix(clipped, current, owner.temporalAlpha)
-        const rejected = current
-        const withHistory = inside.select(temporal, rejected)
+        const motionSafe = mix(temporal, current, motion)
+        const withHistory = inside.select(motionSafe, current)
         outputColor.assign(mix(current, withHistory, owner.historyValid))
       })
 
@@ -295,7 +305,7 @@ export class CloudsResolveNode extends TempNode {
   readonly velocityNode: TextureNode
   readonly frame = uniform(0, 'int').setName('cloudsResolveFrame')
   readonly temporalAlpha = uniform(0.1).setName('cloudsTemporalAlpha')
-  readonly varianceGamma = uniform(1.5).setName('cloudsVarianceGamma')
+  readonly varianceGamma = uniform(2).setName('cloudsVarianceGamma') // Phase 1a: match WebGL CloudsResolveMaterial
   readonly texelSize = uniform(new Vector2(1, 1)).setName(
     'cloudsResolveTexelSize'
   )

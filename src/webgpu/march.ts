@@ -713,12 +713,12 @@ export function setupCloudsMarch(
         .add(cameraPosition)
       const prevClip = march.reprojectionMatrix.mul(vec4(frontPositionWorld, 1))
       const prevNdc = prevClip.xy.div(prevClip.w)
-      prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
+prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
     }).Else(() => {
       const frontView = positionView.mul(frontDepth)
       const prevClip = march.viewReprojectionMatrix.mul(vec4(frontView, 1))
       const prevNdc = prevClip.xy.div(prevClip.w)
-      prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
+prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
     })
     // a=1 required: MRT packs vec4; a=0 under material blending can zero RGB.
     const velocity = screenUV.sub(prevUv)
