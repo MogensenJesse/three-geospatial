@@ -247,14 +247,39 @@
         </label>
 
         <label>
-          <span>Exposure <output id="exposure-value">0.40</output></span>
+          <span>Exposure <output id="exposure-value">1.25</output></span>
           <input
             id="exposure"
             type="range"
             min="0.1"
             max="10"
             step="0.05"
-            value="0.4"
+            value="1.25"
+          />
+        </label>
+
+        <label>
+          <span>Sky light scale <output id="sky-light-scale-value">3.00</output></span>
+          <input
+            id="sky-light-scale"
+            type="range"
+            min="0.5"
+            max="5"
+            step="0.05"
+            value="3"
+          />
+        </label>
+
+        <label>
+          <span>Sky intensity <output id="sky-intensity-value">6.00</output></span>
+          <input
+            id="sky-intensity"
+            type="range"
+            min="0.25"
+            max="6"
+            step="0.05"
+            value="6"
+            title="Art-directed: scales sky RGB from 0.15 baseline. Preetham bake: multiplies baked outSky."
           />
         </label>
       </section>

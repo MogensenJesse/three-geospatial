@@ -34,6 +34,10 @@ export interface CloudControlsDeps {
   phaseFunctionInput: any
   powderScaleInput: any
   powderScaleOutput: HTMLOutputElement
+  skyIntensityInput: any
+  skyIntensityOutput: HTMLOutputElement
+  skyLightScaleInput: any
+  skyLightScaleOutput: HTMLOutputElement
   qualityPresetInput: any
   renderer: any
   resolutionScaleInput: any
@@ -81,6 +85,10 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     phaseFunctionInput,
     powderScaleInput,
     powderScaleOutput,
+    skyIntensityInput,
+    skyIntensityOutput,
+    skyLightScaleInput,
+    skyLightScaleOutput,
     qualityPresetInput,
     renderer,
     resolutionScaleInput,
@@ -128,6 +136,10 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     )
     powderScaleInput.value = String(cloudNode.powderScale)
     powderScaleOutput.value = cloudNode.powderScale.toFixed(2)
+    // HTML defaults win (exposure / sky intensity already on the inputs).
+    cloudNode.skyLightScale = Number(skyLightScaleInput.value)
+    skyLightScaleOutput.value = Number(skyLightScaleInput.value).toFixed(2)
+    skyIntensityOutput.value = Number(skyIntensityInput.value).toFixed(2)
     groundBounceInput.value = String(cloudNode.groundBounceScale)
     groundBounceOutput.value = cloudNode.groundBounceScale.toFixed(2)
     phaseFunctionInput.value = cloudNode.phaseFunctionMode
@@ -216,11 +228,14 @@ export function bindCloudControls(deps: CloudControlsDeps): {
   const applyIrradianceMode = (): void => {
     const env = cloudNode.environment
     const elev = Number(sunInput.value)
+    const skyIntensity = Number(skyIntensityInput.value)
     if (irradianceMode === 'preethamBake') {
       preethamBakeIrradiance(elev, env.sunIrradiance, env.skyIrradiance)
+      env.skyIrradiance.multiplyScalar(skyIntensity)
     } else {
       env.sunIrradiance.copy(artDirectedSun)
-      env.skyIrradiance.copy(artDirectedSky)
+      // Baseline artDirectedSky is 0.15; slider is a multiplier (1 = 0.15).
+      env.skyIrradiance.copy(artDirectedSky).multiplyScalar(skyIntensity)
     }
     cloudNode.resetTemporalHistory()
   }
@@ -297,6 +312,18 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     cloudNode.resetTemporalHistory()
   }
 
+  const updateSkyLightScale = (): void => {
+    const scale = Number(skyLightScaleInput.value)
+    cloudNode.skyLightScale = scale
+    skyLightScaleOutput.value = scale.toFixed(2)
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateSkyIntensity = (): void => {
+    skyIntensityOutput.value = Number(skyIntensityInput.value).toFixed(2)
+    applyIrradianceMode()
+  }
+
   const updateGroundBounce = (): void => {
     const scale = Number(groundBounceInput.value)
     cloudNode.groundBounceScale = scale
@@ -341,6 +368,8 @@ export function bindCloudControls(deps: CloudControlsDeps): {
   marchIterationsInput.addEventListener('input', updateMarchIterations)
   multiScatterInput.addEventListener('input', updateMultiScatter)
   powderScaleInput.addEventListener('input', updatePowderScale)
+  skyLightScaleInput.addEventListener('input', updateSkyLightScale)
+  skyIntensityInput.addEventListener('input', updateSkyIntensity)
   groundBounceInput.addEventListener('input', updateGroundBounce)
   phaseFunctionInput.addEventListener('change', updatePhaseFunction)
   sunInput.addEventListener('input', updateSunAndIrradiance)

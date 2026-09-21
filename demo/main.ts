@@ -3,6 +3,7 @@
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import Stats from 'three/addons/libs/stats.module.js'
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
+import { WaterMesh } from 'three/addons/objects/WaterMesh.js'
 import ThreeRenderPipeline from 'three/src/renderers/common/RenderPipeline.js'
 import { float, mix, pass, positionWorld, uniform } from 'three/tsl'
 import {
@@ -10,14 +11,15 @@ import {
   BoxGeometry,
   Color,
   DirectionalLight,
-  GridHelper,
   HemisphereLight,
   MathUtils,
   Mesh,
   MeshStandardNodeMaterial,
   PerspectiveCamera,
   PlaneGeometry,
+  RepeatWrapping,
   Scene,
+  TextureLoader,
   TimestampQuery,
   Vector2,
   Vector3,
@@ -115,6 +117,14 @@ async function main(): Promise<void> {
   const powderScaleInput = requireElement<HTMLInputElement>('powder-scale')
   const powderScaleOutput =
     requireElement<HTMLOutputElement>('powder-scale-value')
+  const skyLightScaleInput = requireElement<HTMLInputElement>('sky-light-scale')
+  const skyLightScaleOutput = requireElement<HTMLOutputElement>(
+    'sky-light-scale-value'
+  )
+  const skyIntensityInput = requireElement<HTMLInputElement>('sky-intensity')
+  const skyIntensityOutput = requireElement<HTMLOutputElement>(
+    'sky-intensity-value'
+  )
   const groundBounceInput = requireElement<HTMLInputElement>('ground-bounce')
   const groundBounceOutput = requireElement<HTMLOutputElement>(
     'ground-bounce-value'
@@ -174,14 +184,31 @@ async function main(): Promise<void> {
   sky.cloudCoverage.value = 0
   scene.add(sky)
 
+  const sunDirection = new Vector3().setFromSphericalCoords(
+    1,
+    MathUtils.degToRad(90 - Number(sunInput.value)),
+    MathUtils.degToRad(135)
+  )
+
+  // Demo-only ocean ground (Three.js WaterMesh + classic waternormals).
+  const waterNormals = await new TextureLoader().loadAsync(
+    '/textures/waternormals.jpg'
+  )
+  waterNormals.wrapS = waterNormals.wrapT = RepeatWrapping
   const groundGeometry = new PlaneGeometry(80_000, 80_000)
-  const groundMaterial = new MeshStandardNodeMaterial({
-    color: 0x52634d,
-    roughness: 0.95
+  const water = new WaterMesh(groundGeometry, {
+    waterNormals,
+    sunDirection,
+    sunColor: 0xffffff,
+    waterColor: 0x001e0f,
+    distortionScale: 3.7,
+    size: 1.0,
+    alpha: 1.0
   })
-  const ground = new Mesh(groundGeometry, groundMaterial)
-  ground.rotation.x = -Math.PI / 2
-  scene.add(ground)
+  water.rotation.x = -Math.PI / 2
+  scene.add(water)
+  // bindCloudControls quality rebind still touches needsUpdate on this material.
+  const groundMaterial = water.material
 
   const landmarkGeometry = new BoxGeometry(240, 900, 240)
   const landmarkMaterial = new MeshStandardNodeMaterial({
@@ -199,21 +226,11 @@ async function main(): Promise<void> {
     scene.add(landmark)
   }
 
-  const grid = new GridHelper(12_000, 24, 0x83927d, 0x65715f)
-  grid.position.y = 1
-  scene.add(grid)
-
   const hemisphere = new HemisphereLight(0xcce8ff, 0x3a3026, 1.5)
   scene.add(hemisphere)
 
   const sunlight = new DirectionalLight(0xfff2df, 4)
   scene.add(sunlight)
-
-  const sunDirection = new Vector3().setFromSphericalCoords(
-    1,
-    MathUtils.degToRad(90 - Number(sunInput.value)),
-    MathUtils.degToRad(135)
-  )
   const cloudNode = clouds({
     camera,
     mapOrigin: new Vector3(),
@@ -235,7 +252,7 @@ async function main(): Promise<void> {
     cloudShadowTransmittance as never,
     sceneShadowsEnabled
   )
-  groundMaterial.aoNode = sceneShadowFactor
+  // WaterMesh uses a custom NodeMaterial (no aoNode); landmarks keep cloud AO.
   landmarkMaterial.aoNode = sceneShadowFactor
 
   const scenePass = pass(scene, camera, { samples: 0 })
@@ -371,6 +388,10 @@ async function main(): Promise<void> {
     phaseFunctionInput,
     powderScaleInput,
     powderScaleOutput,
+    skyIntensityInput,
+    skyIntensityOutput,
+    skyLightScaleInput,
+    skyLightScaleOutput,
     qualityPresetInput,
     renderer,
     resolutionScaleInput,
@@ -448,6 +469,7 @@ async function main(): Promise<void> {
       sky.material.dispose()
       groundGeometry.dispose()
       groundMaterial.dispose()
+      waterNormals.dispose()
       landmarkGeometry.dispose()
       landmarkMaterial.dispose()
       renderer.dispose()

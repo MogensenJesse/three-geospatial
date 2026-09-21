@@ -60,3 +60,17 @@
 | When | Phase | Note |
 |--|--|--|
 | 2026-09-19 | **Lightness pick landed** | Demo default `preethamBake` + artDirected A/B zero-copy fix. Jesse still smoke vs WebGL; next `skyLightScale` if short. |
+
+---
+
+## Demo lock (2026-09-21) — ADR coherence
+
+Jesse locked demo defaults after tuning: **exposure 1.25**, **`skyLightScale` 3**, **sky intensity 6**, irradiance **preethamBake**.
+
+**Coherent with ADR?** Directionally yes (bake first, then sky fill). Magnitude is **past** the ADR’s “small steps” (1.0→1.2): stacked sky path is roughly **3 × 6** vs baseline bake sky. Treat as an **accepted demo art lock**, not a library default.
+
+**Guidance:**
+1. Keep **`march.skyLightScale` uniform default = 1** in the library; demo HTML/`bind` applies 3 (QA lean note).
+2. If stills go milky/blown vs WebGL, dial **sky intensity down before** `skyLightScale` (preserve lobe contrast).
+3. Powder still last; grain still temporal.
+4. Pantheon host should get explicit options (`skyLightScale` on `CloudsOptions`) rather than inheriting a baked march default of 3.
