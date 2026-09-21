@@ -228,9 +228,9 @@ export function bindCloudControls(deps: CloudControlsDeps): {
   const updateIrradianceMode = (): void => {
     irradianceMode = irradianceModeInput.value as IrradianceMode
     if (irradianceMode === 'takram') {
-      console.warn('[demo] takram mode blocked — falling back to artDirected.')
-      irradianceMode = 'artDirected'
-      irradianceModeInput.value = 'artDirected'
+      console.warn('[demo] takram mode blocked — falling back to preethamBake.')
+      irradianceMode = 'preethamBake'
+      irradianceModeInput.value = 'preethamBake'
     }
     const url = new URL(location.href)
     url.searchParams.set('irradiance', irradianceMode)
@@ -356,8 +356,8 @@ export function bindCloudControls(deps: CloudControlsDeps): {
   temporalHistoryInput.checked = true
   updateTemporalHistory()
   updateSun()
-  artDirectedSun.copy(cloudNode.environment.sunIrradiance)
-  artDirectedSky.copy(cloudNode.environment.skyIrradiance)
+  // Keep module artDirectedSun/Sky (1 / 0.15). Env boots as Vector3(0) —
+  // copying those zeros here made ?irradiance=artDirected go black.
   applyIrradianceMode()
   updateExposure()
 

@@ -45,7 +45,7 @@ export function parseIrradianceMode(
   if (raw === 'preethamBake' || raw === 'takram' || raw === 'artDirected') {
     return raw
   }
-  return 'artDirected'
+  return 'preethamBake' // ADR: match SkyMesh fill energy; artDirected sky=0.15 was crushing volumes
 }
 
 export function irradianceModeFromLocation(
@@ -54,6 +54,6 @@ export function irradianceModeFromLocation(
   try {
     return parseIrradianceMode(new URLSearchParams(search).get('irradiance'))
   } catch {
-    return 'artDirected'
+    return 'preethamBake'
   }
 }

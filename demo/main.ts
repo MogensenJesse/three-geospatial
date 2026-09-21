@@ -126,9 +126,9 @@ async function main(): Promise<void> {
   let irradianceMode: IrradianceMode = irradianceModeFromLocation()
   if (irradianceMode === 'takram') {
     console.warn(
-      '[demo] irradiance=takram blocked (no atmosphere in standalone demo). Using artDirected. Compare via storybook-webgpu Clouds-Basic.'
+      '[demo] irradiance=takram blocked (no atmosphere in standalone demo). Using preethamBake (keep Preetham sky; no takram atmosphere).'
     )
-    irradianceMode = 'artDirected'
+    irradianceMode = 'preethamBake'
   }
   irradianceModeInput.value = irradianceMode
   const sunOutput = requireElement<HTMLOutputElement>('sun-value')

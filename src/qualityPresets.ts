@@ -62,7 +62,7 @@ const highClouds: CloudMarchQuality = {
   minDensity: 1e-5,
   minExtinction: 1e-5,
   minTransmittance: 1e-2,
-  secondaryIterationCount: 1,
+  secondaryIterationCount: 2, // WebGL high maxIterationCountToSun
   minSecondaryStepSize: 100,
   secondaryStepScale: 2,
   groundIterationCount: 3,
@@ -83,7 +83,7 @@ const highShadow: CloudShadowQuality = {
   minTransmittance: 1e-4,
   shapeDetail: true,
   turbulence: true,
-  temporalAlpha: 0.1,
+  temporalAlpha: 0.01, // WebGL ShadowResolveMaterial default
   temporalGamma: 1
 }
 
@@ -125,7 +125,7 @@ const low: CloudQualitySettings = {
     minTransmittance: 1e-2,
     shapeDetail: false,
     turbulence: false,
-    temporalAlpha: 0.1
+    temporalAlpha: 0.01
   }
 }
 

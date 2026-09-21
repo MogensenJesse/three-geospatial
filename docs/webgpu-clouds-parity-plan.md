@@ -197,8 +197,11 @@ Checked plan text against live `webgpu/clouds` HEAD and `git show main:packages/
 
 | When | Phase | Note |
 |--|--|--|
+| 2026-09-19 | **Lightness pick landed** | Demo default `preethamBake` + artDirected A/B zero-copy fix. Jesse still smoke vs WebGL; next `skyLightScale` if short. |
 | 2026-09-18 | **1a done** | `CloudsResolveNode.varianceGamma` default **1.5 → 2** (HEAD `a9d0b998` tip may include plan commit; change may still be uncommitted per QA). Next: Jesse smoke still grain; then **1b** velocity/Y if pans still smear. |
 | 2026-09-18 | **1b partial** | Y/sign OK (no wrong-way ghosts). Linger remains → dial motion lean / snap-to-current; hold full 1b tick until that pass. |
 | 2026-09-18 | **1b Y A/B** | Removed march `prevUv` Y negate → history stopped accumulating. **Revert** — original Y flip confirmed. | Jesse smoke **passed** (still grain OK); ghosting still open → **1b**.
 
 **Next up:** 1b follow-up — motion lean / linger (Y done). Full 1b tick after Jesse OK.
+
+| 2026-09-19 | **Lightness ADR** | See `docs/adr-cloud-lightness-preetham.md` — keep Preetham sky; feed march via `preethamBake` irradiance. |

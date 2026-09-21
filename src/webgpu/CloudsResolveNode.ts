@@ -59,11 +59,10 @@ const closestOffsets: Array<readonly [number, number]> = [
   [1, 1]
 ]
 
+// WebGL cloudsResolve.frag does NOT define VARIANCE_9_SAMPLES, so
+// varianceClipping.glsl uses the 4-neighbour cross (+ current = 5).
+// Shadow resolve keeps the 9-sample neighbourhood separately.
 const varianceOffsets: Array<readonly [number, number]> = [
-  [-1, -1],
-  [-1, 1],
-  [1, -1],
-  [1, 1],
   [1, 0],
   [0, -1],
   [0, 1],
