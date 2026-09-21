@@ -133,6 +133,8 @@ export class CloudsMarchParameters {
   readonly frame = uniform(0, 'int').setName('cloudsFrame')
   /** 1 when Bayer TAAU is on; 0 freezes march jitter at 0.5. */
   readonly temporalUpscaleAmount = uniform(0).setName('cloudsTemporalUpscaleAmount')
+  /** 1 = STBN/hash ray-start jitter live; 0 freezes jitter at 0 (debug stills). */
+  readonly stepJitterScale = uniform(1).setName('cloudsStepJitterScale')
   /** <1 densifies steps when TAAU is off (thin high-layer onion-skin). */
   readonly stepSizeScale = uniform(1).setName('cloudsStepSizeScale')
 }
@@ -375,14 +377,17 @@ export function setupCloudsMarch(
         .mul(rayDirection)
         .add(cameraPosition)
         .toVar()
-      // Ray-start jitter: screen STBN/IGN. With history on + TAAU off, TAA
-      // damps crawl; world-space hashes correlated into horizon onion rings.
+      // Ray-start jitter: screen STBN/IGN in *march-pixel* space (WebGL
+      // getSTBN / gl_FragCoord parity). Do not scale by TAAU factor — that
+      // beats Bayer 4x4 and causes diagonal stripes.
       const jitter = float(0).toVar()
       if (parameters.stbnTexture != null) {
         const stbn = parameters.stbnTexture
-        const size = textureSize(stbn, int(0))
-        const scale = float(1).div(size)
-        const layer = float(march.frame.mod(size.z))
+        // TSL textureSize() on 3D textures emits vec2 + pad Z=0 — broken WGSL.
+        // Match takram stbn.bin (128x128x64); keep in sync with demo loader.
+        const stbnSize = vec3(128, 128, 64)
+        const scale = vec3(1).div(stbnSize)
+        const layer = float(march.frame.mod(int(64)))
         jitter.assign(
           stbn.sample(vec3(screenCoordinate.xy, layer).mul(scale)).r
         )
@@ -393,6 +398,8 @@ export function setupCloudsMarch(
           )
         )
       }
+      // Debug: stepJitterScale=0 freezes ray-start (no STBN stipple in stills).
+      jitter.mulAssign(march.stepJitterScale)
       const startUv = getEnvironmentUv(environment, rayOrigin)
       const mipFromUv = getMipLevel(
         startUv.mul(parameters.localWeatherRepeat),

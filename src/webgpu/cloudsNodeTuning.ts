@@ -35,6 +35,7 @@ export interface CloudsNodeTuningProps {
   readonly turbulenceRepeat: Vector2
   secondaryIterationCount: number
   skyLightScale: number
+  stepJitterScale: number
   powderScale: number
   powderExponent: number
   groundBounceScale: number
@@ -235,6 +236,16 @@ export function installCloudsNodeTuning(proto: object): void {
       },
       set(this: CloudsNodeTuningHost, value: any) {
         this.marchNode.march.skyLightScale.value = value
+      },
+      enumerable: true,
+      configurable: true
+    },
+    stepJitterScale: {
+      get(this: CloudsNodeTuningHost) {
+        return this.marchNode.march.stepJitterScale.value
+      },
+      set(this: CloudsNodeTuningHost, value: any) {
+        this.marchNode.march.stepJitterScale.value = value
       },
       enumerable: true,
       configurable: true

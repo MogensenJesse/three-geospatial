@@ -74,6 +74,7 @@ export class CloudsNode extends TempNode {
   declare turbulenceRepeat: Vector2
   declare secondaryIterationCount: number
   declare skyLightScale: number
+declare stepJitterScale: number
   declare powderScale: number
   declare powderExponent: number
   declare groundBounceScale: number

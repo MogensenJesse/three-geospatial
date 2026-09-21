@@ -5,22 +5,26 @@ import Stats from 'three/addons/libs/stats.module.js'
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
 import { WaterMesh } from 'three/addons/objects/WaterMesh.js'
 import ThreeRenderPipeline from 'three/src/renderers/common/RenderPipeline.js'
-import { float, mix, pass, positionWorld, uniform } from 'three/tsl'
+import { float, mix, pass, positionWorld, texture3D, uniform } from 'three/tsl'
 import {
   AgXToneMapping,
   BoxGeometry,
   Color,
+  Data3DTexture,
   DirectionalLight,
   HemisphereLight,
   MathUtils,
+  NearestFilter,
   Mesh,
   MeshStandardNodeMaterial,
   PerspectiveCamera,
+  RedFormat,
   PlaneGeometry,
   RepeatWrapping,
   Scene,
   TextureLoader,
   TimestampQuery,
+  UnsignedByteType,
   Vector2,
   Vector3,
   WebGPURenderer
@@ -59,6 +63,34 @@ interface DemoRenderPipeline {
 const RenderPipeline = ThreeRenderPipeline as unknown as new (
   renderer: WebGPURenderer
 ) => DemoRenderPipeline
+
+
+const STBN_TEXTURE_WIDTH = 128
+const STBN_TEXTURE_HEIGHT = 128
+const STBN_TEXTURE_DEPTH = 64
+
+async function loadStbnTexture(url: string): Promise<Data3DTexture> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Failed to load STBN: ${response.status} ${url}`)
+  }
+  const data = new Uint8Array(await response.arrayBuffer())
+  const texture = new Data3DTexture(
+    data,
+    STBN_TEXTURE_WIDTH,
+    STBN_TEXTURE_HEIGHT,
+    STBN_TEXTURE_DEPTH
+  )
+  texture.type = UnsignedByteType
+  texture.format = RedFormat
+  texture.minFilter = NearestFilter
+  texture.magFilter = NearestFilter
+  texture.wrapS = RepeatWrapping
+  texture.wrapT = RepeatWrapping
+  texture.wrapR = RepeatWrapping
+  texture.needsUpdate = true
+  return texture
+}
 
 async function main(): Promise<void> {
   if (!('gpu' in navigator) || navigator.gpu == null) {
@@ -101,6 +133,9 @@ async function main(): Promise<void> {
   const debugOutputInput = requireElement<HTMLSelectElement>('debug-output')
   const temporalHistoryInput =
     requireElement<HTMLInputElement>('temporal-history')
+  const stbnJitterFreezeInput = requireElement<HTMLInputElement>(
+    'stbn-jitter-freeze'
+  )
   const passStats = requireElement<HTMLElement>('pass-stats')
   const passTimingEma = createPassTimingEma()
   const sunDetailInput = requireElement<HTMLInputElement>('sun-detail')
@@ -241,6 +276,8 @@ async function main(): Promise<void> {
     skyIrradiance: new Vector3()
   })
   cloudNode.coverage = Number(coverageInput.value)
+  const stbnTexture = await loadStbnTexture('/textures/stbn.bin')
+  cloudNode.setStbnTexture(texture3D(stbnTexture))
   const marchRenderSize = new Vector2()
   const marchOutputSize = new Vector2()
   const drawingBufferSize = new Vector2()
@@ -408,6 +445,7 @@ async function main(): Promise<void> {
     sunlight,
     temporalHistoryInput,
     temporalUpscaleInput,
+    stbnJitterFreezeInput,
     turbulenceInput,
     updateDebugOutput,
     updateTemporalHistory
@@ -470,6 +508,7 @@ async function main(): Promise<void> {
       groundGeometry.dispose()
       groundMaterial.dispose()
       waterNormals.dispose()
+      stbnTexture.dispose()
       landmarkGeometry.dispose()
       landmarkMaterial.dispose()
       renderer.dispose()

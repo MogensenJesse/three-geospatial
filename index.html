@@ -317,6 +317,15 @@
           <input id="temporal-history" type="checkbox" checked />
         </label>
 
+        <label class="toggle">
+          <span>Freeze STBN jitter</span>
+          <input
+            id="stbn-jitter-freeze"
+            type="checkbox"
+            title="Debug: force march ray-start jitter to 0 (still A/B without history). Also ?stbnJitter=0"
+          />
+        </label>
+
         <button type="button" id="dump-wgsl">Dump WGSL</button>
         <p id="pass-stats" class="status" aria-live="polite">
           Pass sizes: —

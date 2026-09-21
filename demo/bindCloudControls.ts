@@ -54,6 +54,7 @@ export interface CloudControlsDeps {
   sunlight: any
   temporalHistoryInput: any
   temporalUpscaleInput: any
+  stbnJitterFreezeInput: any
   turbulenceInput: any
   updateDebugOutput: () => void
   updateTemporalHistory: any
@@ -105,6 +106,7 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     sunlight,
     temporalHistoryInput,
     temporalUpscaleInput,
+    stbnJitterFreezeInput,
     turbulenceInput,
     updateDebugOutput,
     updateTemporalHistory
@@ -116,6 +118,8 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     resolutionScaleInput.value = String(cloudNode.resolutionScale)
     resolutionScaleOutput.value = `${Math.round(cloudNode.resolutionScale * 100)}%`
     temporalUpscaleInput.checked = cloudNode.temporalUpscale
+  stbnJitterFreezeInput.checked =
+    new URLSearchParams(location.search).get('stbnJitter') === '0'
     shapeDetailInput.checked = cloudNode.shapeDetailEnabled
     turbulenceInput.checked = cloudNode.turbulenceEnabled
     sunDetailInput.value = String(cloudNode.secondaryIterationCount)
@@ -205,6 +209,23 @@ export function bindCloudControls(deps: CloudControlsDeps): {
 
   const updateTemporalUpscale = (): void => {
     cloudNode.temporalUpscale = temporalUpscaleInput.checked
+  }
+
+  const applyStbnJitterFreeze = (): void => {
+    // Checked / ?stbnJitter=0 → scale 0 (frozen). Default off = STBN live.
+    cloudNode.stepJitterScale = stbnJitterFreezeInput.checked ? 0 : 1
+    cloudNode.resetTemporalHistory()
+  }
+
+  const updateStbnJitterFreeze = (): void => {
+    const url = new URL(location.href)
+    if (stbnJitterFreezeInput.checked) {
+      url.searchParams.set('stbnJitter', '0')
+    } else {
+      url.searchParams.delete('stbnJitter')
+    }
+    history.replaceState(null, '', url)
+    applyStbnJitterFreeze()
   }
 
   const updateShapeDetail = (): void => {
@@ -358,6 +379,7 @@ export function bindCloudControls(deps: CloudControlsDeps): {
   qualityPresetInput.addEventListener('change', updateQualityPreset)
   resolutionScaleInput.addEventListener('change', updateResolutionScale)
   temporalUpscaleInput.addEventListener('change', updateTemporalUpscale)
+  stbnJitterFreezeInput.addEventListener('change', updateStbnJitterFreeze)
   shapeDetailInput.addEventListener('change', updateShapeDetail)
   turbulenceInput.addEventListener('change', updateTurbulence)
   cloudShadowsInput.addEventListener('change', updateCloudShadows)
@@ -388,6 +410,7 @@ export function bindCloudControls(deps: CloudControlsDeps): {
   // Keep module artDirectedSun/Sky (1 / 0.15). Env boots as Vector3(0) —
   // copying those zeros here made ?irradiance=artDirected go black.
   applyIrradianceMode()
+  applyStbnJitterFreeze()
   updateExposure()
 
   return {
