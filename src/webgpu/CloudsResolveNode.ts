@@ -7,7 +7,8 @@ import {
   LinearFilter,
   NoBlending,
   RenderTarget,
-  RGBAFormat
+  RGBAFormat,
+  Vector2
 } from 'three'
 import {
   Fn,
@@ -22,7 +23,6 @@ import {
   texture,
   textureSize,
   uniform,
-  uniformArray,
   vec2,
   vec4
 } from 'three/tsl'
@@ -37,7 +37,7 @@ import {
   type TextureNode
 } from 'three/webgpu'
 
-import { bayerIndices } from '../bayer'
+import { bayerOffsets } from '../bayer'
 import { computeCloudsSizes } from './cloudsSizes'
 import type { Node } from './internal/node'
 import { outputTexture } from './internal/OutputTextureNode'
@@ -71,10 +71,8 @@ const varianceOffsets: Array<readonly [number, number]> = [
   [-1, 0]
 ]
 
-const bayerPhaseNodes = /*#__PURE__*/ uniformArray(
-  Array.from(bayerIndices),
-  'int'
-).setName('cloudsBayerIndices')
+/** Full-res pixels. w = 1 on this frame's Bayer sample, ~0.36 one pixel away. */
+const TEMPORAL_UPSCALE_SIGMA = 0.7
 
 function sampleClosestCloudVelocity(
   velocityNode: TextureNode,
@@ -111,29 +109,26 @@ class CloudsResolveColorNode extends TempNode {
       const outputColor = vec4(0).toVar()
 
       If(owner.temporalUpscaleNode.greaterThan(0), () => {
-        // WebGL: lowResCoord = coord / 4 (integer)
-        const lowResCoord = ivec2(
-          coord.x.div(int(4)),
-          coord.y.div(int(4))
-        ).toConst()
-        const current = owner.inputNode.load(lowResCoord).toConst()
+        // Full-res pixel center relative to this frame's Bayer sample lattice.
+        // jitterOffset is bayerOffsets[frame] * 4 (unflipped, Y-down), so d is
+        // 0 exactly where the old phase test was true.
+        const pixelCenter = vec2(coord).add(0.5)
+        const rel = pixelCenter.sub(owner.jitterOffset).toConst()
+        const nearest = rel.div(4).add(0.5).floor()
+        const nearestBlock = ivec2(nearest).toConst()
+        const delta = rel.sub(nearest.mul(4)).toConst()
+        const sigma2 = float(TEMPORAL_UPSCALE_SIGMA * TEMPORAL_UPSCALE_SIGMA)
+        const weight = delta.dot(delta).div(sigma2.mul(2)).negate().exp()
 
-        // flat[y*4+x] — same layout as WebGL bayerIndices[x%4][y%4] when
-        // screen Y is already top-left (march jitter Y flip is separate).
-        const phaseIndex = coord.y
-          .mod(int(4))
-          .mul(int(4))
-          .add(coord.x.mod(int(4)))
-          .toConst()
-        const currentPhase = bayerPhaseNodes.element(phaseIndex)
-        const framePhase = owner.frame.mod(int(16))
-        const isCurrentPhase = currentPhase.equal(framePhase)
+        // Tent filter on the jittered low-res lattice. Equals the point sample
+        // on a phase pixel; blends neighbours elsewhere (no 4x4 blocks).
+        const lowResSize = vec2(textureSize(owner.inputNode)).toConst()
+        const reconUv = rel.div(4).add(0.5).div(lowResSize).toConst()
+        const recon = texture(owner.inputNode, reconUv).toConst()
 
-        // Shared by both Bayer phases. Phase pixels used to hard-assign
-        // `current`, which re-injected one raw STBN sample every 16 frames.
         const closest = sampleClosestCloudVelocity(
           owner.velocityNode,
-          lowResCoord
+          nearestBlock
         ).toConst()
         const prevUv = screenUV.sub(closest.gb).toConst()
         const inside = prevUv
@@ -142,39 +137,29 @@ class CloudsResolveColorNode extends TempNode {
           .and(prevUv.lessThanEqual(1).all())
 
         const historyReproj = texture(owner.historyNode, prevUv, int(0))
-        // Variance-clip history; on miss fall back to current (not same-UV
-        // history — that leaves infinite motion trails). Filtered UV reads,
-        // 4-neighbour cross (+ current = 5).
-        const inputTexelSize = vec2(textureSize(owner.inputNode)).reciprocal()
+        // 4-neighbour cross around the reconstruction sample (+ center = 5).
+        const inputTexelSize = lowResSize.reciprocal()
         const clipped = varianceClip({
           offsets: varianceOffsets,
-          current,
+          current: recon,
           history: historyReproj,
           gamma: owner.varianceGamma,
           sampleNeighbor: (x, y) =>
             texture(
               owner.inputNode,
-              screenUV.add(vec2(x, y).mul(inputTexelSize)),
-              int(0)
+              reconUv.add(vec2(x, y).mul(inputTexelSize))
             )
         })
-        // Hard-cut ghosts. OOB -> current; fast UV motion -> lean to
-        // current (gamma=2 keeps soft stills). Prove Y with debugOutput=velocity.
+        // OOB or fast motion falls back to the reconstruction, not a block texel.
         const motion = motionFactor(closest.gb)
-        const historySample = inside.select(
-          mix(clipped, current, motion),
-          current
+        const temporal = mix(
+          clipped,
+          recon,
+          owner.temporalUpscaleAlpha.mul(weight)
         )
-
-        If(isCurrentPhase, () => {
-          // EMA the fresh sample into history so STBN grain averages out.
-          const temporal = mix(clipped, current, owner.temporalUpscaleAlpha)
-          const motionSafe = mix(temporal, current, motion)
-          const withHistory = inside.select(motionSafe, current)
-          outputColor.assign(mix(current, withHistory, owner.historyValid))
-        }).Else(() => {
-          outputColor.assign(mix(current, historySample, owner.historyValid))
-        })
+        const motionSafe = mix(temporal, recon, motion)
+        const withHistory = inside.select(motionSafe, recon)
+        outputColor.assign(mix(recon, withHistory, owner.historyValid))
       }).Else(() => {
         const current = owner.inputNode.load(coord).toConst()
         const closest = sampleClosestCloudVelocity(
@@ -213,8 +198,9 @@ class CloudsResolveColorNode extends TempNode {
 }
 
 /**
- * Cloud-specific temporal resolve. It reconstructs one quarter-resolution Bayer
- * phase per frame, or performs same-resolution TAA when upscaling is off.
+ * Cloud-specific temporal resolve. With upscaling it reconstructs the
+ * quarter-resolution Bayer lattice and accumulates it. Otherwise it performs
+ * same-resolution TAA.
  */
 export class CloudsResolveNode extends TempNode {
   static get type(): string {
@@ -224,10 +210,14 @@ export class CloudsResolveNode extends TempNode {
   readonly inputNode: TextureNode
   readonly velocityNode: TextureNode
   readonly frame = uniform(0, 'int').setName('cloudsResolveFrame')
+  /** This frame's Bayer sample, in full-res pixels (Y-down). Set in render(). */
+  readonly jitterOffset = uniform(new Vector2()).setName(
+    'cloudsResolveJitterOffset'
+  )
   readonly temporalAlpha = uniform(0.1).setName('cloudsTemporalAlpha')
   /**
-   * TAAU phase-pixel blend toward the fresh sample. 1 restores the hard
-   * 1/16 replacement; lower values let history average the STBN grain.
+   * TAAU blend toward the fresh reconstruction, scaled by distance to this
+   * frame's Bayer sample. 1 replaces the phase pixel outright.
    */
   readonly temporalUpscaleAlpha = uniform(0.2).setName(
     'cloudsTemporalUpscaleAlpha'
@@ -358,6 +348,10 @@ export class CloudsResolveNode extends TempNode {
     if (this.needsClearHistory) {
       this.clearHistory(frame)
     }
+
+    const phase = ((this.frame.value % 16) + 16) % 16
+    const offset = bayerOffsets[phase]
+    this.jitterOffset.value.set(offset.x * 4, offset.y * 4)
 
     renderer.setRenderTarget(this.resolveTarget)
     renderer.setClearColor(0, 0)
