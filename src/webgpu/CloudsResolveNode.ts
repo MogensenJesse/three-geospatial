@@ -129,44 +129,50 @@ class CloudsResolveColorNode extends TempNode {
         const framePhase = owner.frame.mod(int(16))
         const isCurrentPhase = currentPhase.equal(framePhase)
 
-        If(isCurrentPhase, () => {
-          outputColor.assign(current)
-        }).Else(() => {
-          // historyValid as mix factor stays live in WGSL (avoids bool fold).
-          const closest = sampleClosestCloudVelocity(
-            owner.velocityNode,
-            lowResCoord
-          ).toConst()
-          const prevUv = screenUV.sub(closest.gb).toConst()
-          const inside = prevUv
-            .greaterThanEqual(0)
-            .all()
-            .and(prevUv.lessThanEqual(1).all())
+        // Shared by both Bayer phases. Phase pixels used to hard-assign
+        // `current`, which re-injected one raw STBN sample every 16 frames.
+        const closest = sampleClosestCloudVelocity(
+          owner.velocityNode,
+          lowResCoord
+        ).toConst()
+        const prevUv = screenUV.sub(closest.gb).toConst()
+        const inside = prevUv
+          .greaterThanEqual(0)
+          .all()
+          .and(prevUv.lessThanEqual(1).all())
 
-          const historyReproj = texture(owner.historyNode, prevUv, int(0))
-          // WebGL TAAU: variance-clip history; on miss fall back to current
-          // (not same-UV history - that leaves infinite motion trails).
-          // Filtered UV reads, 4-neighbour cross (+ current = 5).
-          const inputTexelSize = vec2(textureSize(owner.inputNode)).reciprocal()
-          const clipped = varianceClip({
-            offsets: varianceOffsets,
-            current,
-            history: historyReproj,
-            gamma: owner.varianceGamma,
-            sampleNeighbor: (x, y) =>
-              texture(
-                owner.inputNode,
-                screenUV.add(vec2(x, y).mul(inputTexelSize)),
-                int(0)
-              )
-          })
-          // Hard-cut ghosts. OOB -> current; fast UV motion -> lean to
-          // current (gamma=2 keeps soft stills). Prove Y with debugOutput=velocity.
-          const motion = motionFactor(closest.gb)
-          const historySample = inside.select(
-            mix(clipped, current, motion),
-            current
-          )
+        const historyReproj = texture(owner.historyNode, prevUv, int(0))
+        // Variance-clip history; on miss fall back to current (not same-UV
+        // history — that leaves infinite motion trails). Filtered UV reads,
+        // 4-neighbour cross (+ current = 5).
+        const inputTexelSize = vec2(textureSize(owner.inputNode)).reciprocal()
+        const clipped = varianceClip({
+          offsets: varianceOffsets,
+          current,
+          history: historyReproj,
+          gamma: owner.varianceGamma,
+          sampleNeighbor: (x, y) =>
+            texture(
+              owner.inputNode,
+              screenUV.add(vec2(x, y).mul(inputTexelSize)),
+              int(0)
+            )
+        })
+        // Hard-cut ghosts. OOB -> current; fast UV motion -> lean to
+        // current (gamma=2 keeps soft stills). Prove Y with debugOutput=velocity.
+        const motion = motionFactor(closest.gb)
+        const historySample = inside.select(
+          mix(clipped, current, motion),
+          current
+        )
+
+        If(isCurrentPhase, () => {
+          // EMA the fresh sample into history so STBN grain averages out.
+          const temporal = mix(clipped, current, owner.temporalUpscaleAlpha)
+          const motionSafe = mix(temporal, current, motion)
+          const withHistory = inside.select(motionSafe, current)
+          outputColor.assign(mix(current, withHistory, owner.historyValid))
+        }).Else(() => {
           outputColor.assign(mix(current, historySample, owner.historyValid))
         })
       }).Else(() => {
@@ -219,6 +225,13 @@ export class CloudsResolveNode extends TempNode {
   readonly velocityNode: TextureNode
   readonly frame = uniform(0, 'int').setName('cloudsResolveFrame')
   readonly temporalAlpha = uniform(0.1).setName('cloudsTemporalAlpha')
+  /**
+   * TAAU phase-pixel blend toward the fresh sample. 1 restores the hard
+   * 1/16 replacement; lower values let history average the STBN grain.
+   */
+  readonly temporalUpscaleAlpha = uniform(0.2).setName(
+    'cloudsTemporalUpscaleAlpha'
+  )
   readonly varianceGamma = uniform(2).setName('cloudsVarianceGamma')
   readonly temporalUpscaleNode = uniform(1).setName('cloudsTemporalUpscale')
   readonly historyValid = uniform(0).setName('cloudsHistoryValid')
