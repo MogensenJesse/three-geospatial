@@ -157,6 +157,8 @@ export class CloudsMarchParameters {
   ).setName('phaseFunctionMode')
 
   readonly resolution = uniform(new Vector2(1, 1)).setName('cloudsResolution')
+  /** 4 while temporal upscaling, else 1. Puts STBN in full-res pixel space. */
+  readonly upscaleFactor = uniform(1).setName('cloudsUpscaleFactor')
   /** STBN time-slice index, 0..63. Not the Bayer/TAAU phase. */
   readonly frame = uniform(0, 'int').setName('cloudsFrame')
   /** 1 = STBN/hash ray-start jitter live; 0 freezes jitter at 0 (debug stills). */
@@ -396,9 +398,14 @@ export function setupCloudsMarch(
         .mul(rayDirection)
         .add(cameraPosition)
         .toVar()
-      // Ray-start jitter: screen STBN/IGN in *march-pixel* space (WebGL
-      // getSTBN / gl_FragCoord parity). Do not scale by TAAU factor — that
-      // beats Bayer 4x4 and causes diagonal stripes.
+      // Ray-start jitter in the full-res pixel this low-res sample covers.
+      // screenCoordinate is the march-pixel center (gl_FragCoord). Times
+      // upscaleFactor plus the Bayer offset lands on that full-res center:
+      // 4*(i+0.5) + (ox-0.5)*4 = 4*i + 4*ox. Scaling without the offset
+      // aliases the 4x4 Bayer lattice into diagonal stripes.
+      const jitterCoord = screenCoordinate.xy
+        .mul(march.upscaleFactor)
+        .add(march.temporalJitter.mul(march.resolution))
       const jitter = float(0).toVar()
       if (parameters.stbnTexture != null) {
         const stbn = parameters.stbnTexture
@@ -407,15 +414,9 @@ export function setupCloudsMarch(
         const stbnSize = vec3(128, 128, 64)
         const scale = vec3(1).div(stbnSize)
         const layer = float(march.frame.mod(int(64)))
-        jitter.assign(
-          stbn.sample(vec3(screenCoordinate.xy, layer).mul(scale)).r
-        )
+        jitter.assign(stbn.sample(vec3(jitterCoord, layer).mul(scale)).r)
       } else {
-        jitter.assign(
-          interleavedGradientNoise(
-            screenCoordinate.xy.add(march.temporalJitter.mul(march.resolution))
-          )
-        )
+        jitter.assign(interleavedGradientNoise(jitterCoord))
       }
       // Debug: stepJitterScale=0 freezes ray-start (no STBN stipple in stills).
       jitter.mulAssign(march.stepJitterScale)

@@ -96,7 +96,10 @@ export class CloudsMarchNode extends TempNode {
   resolutionScale = 1
   /** Bayer/TAAU phase, 0..15. */
   frame = 0
-  /** STBN slice. Advances every rendered frame, including when TAAU is off. */
+  /**
+   * STBN slice, 0..63. Steps every frame when TAAU is off. With TAAU it steps
+   * once per 16-frame Bayer cycle so each full-res pixel walks consecutive slices.
+   */
   private stbnFrame = 0
 
   /** Optional BSM inputs. */
@@ -250,6 +253,7 @@ export class CloudsMarchNode extends TempNode {
     march.cameraFar.value = rangeCamera.far
     // Full-res path: denser steps so the thin high layer (≈500 m) does not onion-skin.
     march.stepSizeScale.value = this.temporalUpscale ? 1 : 0.35
+    march.upscaleFactor.value = this.temporalUpscale ? 4 : 1
 
     let dx = 0
     let dy = 0
@@ -334,9 +338,11 @@ export class CloudsMarchNode extends TempNode {
     if (camera != null && 'near' in camera && 'far' in camera) {
       this.prepareFrame(camera)
     }
-    // Independent of the 0..15 Bayer phase and of temporalUpscale.
+    // Hold one slice for the whole Bayer cycle, then step as phase 0 begins.
+    if (!this.temporalUpscale || this.frame === 0) {
+      this.stbnFrame = (this.stbnFrame + 1) % 64
+    }
     this.march.frame.value = this.stbnFrame
-    this.stbnFrame = (this.stbnFrame + 1) % 64
 
     this.rendererState = resetRendererState(renderer, this.rendererState!)
     renderer.setRenderTarget(this.renderTarget)
