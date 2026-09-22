@@ -22,14 +22,14 @@ export function preethamBakeIrradiance(
   const daylight = Math.max(0, Math.min(1, elev / 90))
   const soft = Math.pow(daylight, 0.65)
   const sunScale = 0.15 + 0.85 * soft // multiplies into ~15 peak
-  outSun.set(15 * (1.05 - 0.1 * soft), 12.5, 10 * (0.85 + 0.2 * soft)).multiplyScalar(
-    sunScale / 1.0
-  )
+  outSun
+    .set(15 * (1.05 - 0.1 * soft), 12.5, 10 * (0.85 + 0.2 * soft))
+    .multiplyScalar(sunScale / 1.0)
   // Rebuild explicitly for clarity / stable energy
   outSun.set(
-    (15 * (1.08 - 0.12 * soft)) * (0.15 + 0.85 * soft),
-    (12.5 * (0.95 + 0.05 * soft)) * (0.15 + 0.85 * soft),
-    (10 * (0.75 + 0.3 * soft)) * (0.15 + 0.85 * soft)
+    15 * (1.08 - 0.12 * soft) * (0.15 + 0.85 * soft),
+    12.5 * (0.95 + 0.05 * soft) * (0.15 + 0.85 * soft),
+    10 * (0.75 + 0.3 * soft) * (0.15 + 0.85 * soft)
   )
   const skyScale = 0.35 + 0.65 * soft
   outSky.set(0.38 * skyScale, 0.5 * skyScale, 0.72 * skyScale)

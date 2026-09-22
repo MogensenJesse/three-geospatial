@@ -14,12 +14,12 @@ import {
   DirectionalLight,
   HemisphereLight,
   MathUtils,
-  NearestFilter,
   Mesh,
   MeshStandardNodeMaterial,
+  NearestFilter,
   PerspectiveCamera,
-  RedFormat,
   PlaneGeometry,
+  RedFormat,
   RepeatWrapping,
   Scene,
   TextureLoader,
@@ -63,7 +63,6 @@ interface DemoRenderPipeline {
 const RenderPipeline = ThreeRenderPipeline as unknown as new (
   renderer: WebGPURenderer
 ) => DemoRenderPipeline
-
 
 const STBN_TEXTURE_WIDTH = 128
 const STBN_TEXTURE_HEIGHT = 128
@@ -133,9 +132,8 @@ async function main(): Promise<void> {
   const debugOutputInput = requireElement<HTMLSelectElement>('debug-output')
   const temporalHistoryInput =
     requireElement<HTMLInputElement>('temporal-history')
-  const stbnJitterFreezeInput = requireElement<HTMLInputElement>(
-    'stbn-jitter-freeze'
-  )
+  const stbnJitterFreezeInput =
+    requireElement<HTMLInputElement>('stbn-jitter-freeze')
   const passStats = requireElement<HTMLElement>('pass-stats')
   const passTimingEma = createPassTimingEma()
   const sunDetailInput = requireElement<HTMLInputElement>('sun-detail')

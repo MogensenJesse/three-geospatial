@@ -54,7 +54,7 @@ export const worleyFbm = /*#__PURE__*/ FnLayout({
 })
 
 export class CloudShapeNode extends ProceduralTexture3DNode {
-  override get type(): string {
+  static override get type(): string {
     return 'CloudShapeNode'
   }
 

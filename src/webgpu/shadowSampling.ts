@@ -192,7 +192,6 @@ export interface SampleShadowOpticalDepthContext {
   shadow: ShadowParameterNodes
   /** Cascade array texture (layer = cascade index); one bind for march + host. */
   shadowAtlas: TextureNode
-  debugMode?: Node<'float'>
   viewMatrix: Node<'mat4'>
 }
 
@@ -289,40 +288,6 @@ export function sampleShadowOpticalDepth(
           }).Else(() => {
             opticalDepth.assign(samplePCF(uv, radius))
           })
-
-          const debugMode = context.debugMode
-          if (debugMode != null) {
-            const raw = (channel: 'r' | 'g' | 'b' | 'a'): Node<'float'> => {
-              return (shadowAtlas.depth(cascadeIndex) as TextureNode).sample(
-                vec2(uv.x.clamp(0, 1), uv.y.clamp(0, 1))
-              )[channel]
-            }
-            opticalDepth.assign(
-              debugMode
-                .equal(-11)
-                .select(
-                  raw('r'),
-                  debugMode
-                    .equal(-12)
-                    .select(
-                      raw('g'),
-                      debugMode
-                        .equal(-13)
-                        .select(
-                          raw('b'),
-                          debugMode
-                            .equal(-14)
-                            .select(
-                              raw('a'),
-                              debugMode
-                                .equal(-15)
-                                .select(raw('b').add(raw('a')), opticalDepth)
-                            )
-                        )
-                    )
-                )
-            )
-          }
         }
       )
     })

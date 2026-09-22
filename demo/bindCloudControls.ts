@@ -118,8 +118,8 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     resolutionScaleInput.value = String(cloudNode.resolutionScale)
     resolutionScaleOutput.value = `${Math.round(cloudNode.resolutionScale * 100)}%`
     temporalUpscaleInput.checked = cloudNode.temporalUpscale
-  stbnJitterFreezeInput.checked =
-    new URLSearchParams(location.search).get('stbnJitter') === '0'
+    stbnJitterFreezeInput.checked =
+      new URLSearchParams(location.search).get('stbnJitter') === '0'
     shapeDetailInput.checked = cloudNode.shapeDetailEnabled
     turbulenceInput.checked = cloudNode.turbulenceEnabled
     sunDetailInput.value = String(cloudNode.secondaryIterationCount)
@@ -292,12 +292,6 @@ export function bindCloudControls(deps: CloudControlsDeps): {
 
     const daylight = MathUtils.smoothstep(sunDirection.y, 0, 0.65)
     cloudNode.environment.sunDirection.copy(sunDirection)
-    cloudNode.environment.sunIrradiance
-      .set(15, 12.5, 10)
-      .multiplyScalar(0.15 + daylight * 0.85)
-    cloudNode.environment.skyIrradiance
-      .set(0.38, 0.5, 0.72)
-      .multiplyScalar(0.35 + daylight * 0.65)
 
     sunlight.position.copy(sunDirection).multiplyScalar(10_000)
     sunlight.intensity = 1 + daylight * 4

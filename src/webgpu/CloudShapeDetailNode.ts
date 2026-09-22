@@ -9,7 +9,7 @@ import { ProceduralTexture3DNode } from './ProceduralTexture3DNode'
 import { stackableWorleyNoise } from './stackableNoise'
 
 export class CloudShapeDetailNode extends ProceduralTexture3DNode {
-  override get type(): string {
+  static override get type(): string {
     return 'CloudShapeDetailNode'
   }
 

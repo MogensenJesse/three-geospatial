@@ -74,7 +74,7 @@ export class CloudsNode extends TempNode {
   declare turbulenceRepeat: Vector2
   declare secondaryIterationCount: number
   declare skyLightScale: number
-declare stepJitterScale: number
+  declare stepJitterScale: number
   declare powderScale: number
   declare powderExponent: number
   declare groundBounceScale: number
@@ -207,11 +207,20 @@ declare stepJitterScale: number
 
   private applyFacadeOptions(facade: CloudsFacadeOptions): void {
     if (facade.cloudLayers != null) {
-      this.cloudLayers.length = 0
-      for (const layer of facade.cloudLayers) {
-        this.cloudLayers.push(
-          layer instanceof CloudLayer ? layer.clone() : new CloudLayer(layer)
+      const layers = facade.cloudLayers
+      if (layers.length !== 4) {
+        throw new Error(
+          `CloudsNode cloudLayers must contain exactly 4 layers (received ${layers.length}).`
         )
+      }
+      for (let index = 0; index < 4; ++index) {
+        const layer = layers[index]
+        if (layer instanceof CloudLayer) {
+          this.cloudLayers[index].copy(layer)
+        } else {
+          this.cloudLayers[index].copy(CloudLayer.DEFAULT)
+          this.cloudLayers[index].set(layer)
+        }
       }
     }
 
@@ -228,8 +237,6 @@ declare stepJitterScale: number
     if (facade.turbulenceDisplacement != null) {
       this.turbulenceDisplacement = facade.turbulenceDisplacement
     }
-    if (facade.shapeDetail != null) this.shapeDetailEnabled = facade.shapeDetail
-    if (facade.turbulence != null) this.turbulenceEnabled = facade.turbulence
     if (facade.localWeatherRepeat != null) {
       this.localWeatherRepeat.copy(facade.localWeatherRepeat)
     }
@@ -259,6 +266,8 @@ declare stepJitterScale: number
   }
 
   private applyPostQualityFacade(facade: CloudsFacadeOptions): void {
+    if (facade.shapeDetail != null) this.shapeDetailEnabled = facade.shapeDetail
+    if (facade.turbulence != null) this.turbulenceEnabled = facade.turbulence
     if (facade.resolutionScale != null) {
       this.resolutionScale = facade.resolutionScale
     }

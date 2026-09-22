@@ -149,7 +149,7 @@ export class ShadowMarchNode extends TempNode {
     this.updateBeforeType = NodeUpdateType.NONE
 
     const cascadeCount = options?.cascadeCount ?? defaults.shadow.cascadeCount
-    this.mapSize = options?.mapSize ?? defaults.shadow.mapSize.x
+    this.mapSize = options?.mapSize ?? defaults.shadow.mapSize
     this.shadowMaps = new CascadedShadowMaps({
       cascadeCount,
       mapSize: new Vector2(this.mapSize, this.mapSize),

@@ -2,6 +2,8 @@
 // Phase C: build-time march specialization (JS-omitted TSL, not runtime If/select).
 
 import type { TextureNode } from 'three/webgpu'
+
+import { MAX_MULTI_SCATTERING_OCTAVES } from '../qualityPresets'
 import type { CloudsMarchParameters } from './march'
 
 /** Axes that drop substantial WGSL when false / -1. Keep ≤ ~6 live combos. */
@@ -23,7 +25,13 @@ export function resolveCloudsMarchVariant(
 ): CloudsMarchVariant {
   const octaves = Math.max(
     1,
-    Math.min(8, Math.round(Number(march.multiScatteringOctaves.value) || 8))
+    Math.min(
+      MAX_MULTI_SCATTERING_OCTAVES,
+      Math.round(
+        Number(march.multiScatteringOctaves.value) ||
+          MAX_MULTI_SCATTERING_OCTAVES
+      )
+    )
   )
   const debug = Number(march.shadowDebugOpticalDepth.value)
   return {

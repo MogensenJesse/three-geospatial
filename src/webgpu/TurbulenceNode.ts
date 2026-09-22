@@ -1,7 +1,7 @@
 // src/webgpu/TurbulenceNode.ts
 
 import { Vector2 } from 'three'
-import { int, vec3 } from 'three/tsl'
+import { int, vec3, vec4 } from 'three/tsl'
 import type { NodeBuilder } from 'three/webgpu'
 
 import { FnLayout } from './internal/FnLayout'
@@ -51,20 +51,18 @@ const curl = /*#__PURE__*/ FnLayout({
 })
 
 export class TurbulenceNode extends ProceduralTextureNode {
-  override get type(): string {
+  static override get type(): string {
     return 'TurbulenceNode'
   }
 
-  protected override enableMipmaps = true
-
   constructor(size = new Vector2().setScalar(128)) {
-    super(size)
+    super(size, true)
   }
 
   protected override setupOutputNode(
     uv: Node<'vec2'>,
     builder: NodeBuilder
   ): Node {
-    return curl(vec3(uv, 0)).mul(0.5).add(0.5)
+    return vec4(curl(vec3(uv, 0)).mul(0.5).add(0.5), 1)
   }
 }

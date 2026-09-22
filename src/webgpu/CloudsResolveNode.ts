@@ -250,7 +250,9 @@ class CloudsResolveColorNode extends TempNode {
           // Phase 1b: hard-cut ghosts. OOB -> current; fast UV motion -> lean to
           // current (gamma=2 keeps soft stills). Prove Y with debugOutput=velocity.
           const speed = closest.g.abs().add(closest.b.abs())
-          const motion = speed.smoothstep(float(0.002), float(0.014)).mul(speed.smoothstep(float(0.002), float(0.014))) // 1b follow-up: harder linger cut
+          const motion = speed
+            .smoothstep(float(0.002), float(0.014))
+            .mul(speed.smoothstep(float(0.002), float(0.014))) // 1b follow-up: harder linger cut
           const historySample = inside.select(
             mix(clipped, current, motion),
             current
@@ -279,7 +281,9 @@ class CloudsResolveColorNode extends TempNode {
         )
         // Phase 1b: same motion hard-cut on full-res TAA path.
         const speed = closest.g.abs().add(closest.b.abs())
-        const motion = speed.smoothstep(float(0.002), float(0.014)).mul(speed.smoothstep(float(0.002), float(0.014))) // 1b follow-up: harder linger cut
+        const motion = speed
+          .smoothstep(float(0.002), float(0.014))
+          .mul(speed.smoothstep(float(0.002), float(0.014))) // 1b follow-up: harder linger cut
         const temporal = mix(clipped, current, owner.temporalAlpha)
         const motionSafe = mix(temporal, current, motion)
         const withHistory = inside.select(motionSafe, current)

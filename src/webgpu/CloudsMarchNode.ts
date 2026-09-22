@@ -111,7 +111,10 @@ export class CloudsMarchNode extends TempNode {
   readonly march = new CloudsMarchParameters()
 
   resolutionScale = 1
+  /** Bayer/TAAU phase, 0..15. */
   frame = 0
+  /** STBN slice. Advances every rendered frame, including when TAAU is off. */
+  private stbnFrame = 0
 
   /** Optional BSM inputs (Phase C). */
   shadow: ShadowParameterNodes | null = null
@@ -258,7 +261,6 @@ export class CloudsMarchNode extends TempNode {
     const rangeCamera = camera as Camera & { near: number; far: number }
     march.cameraNear.value = rangeCamera.near
     march.cameraFar.value = rangeCamera.far
-    march.frame.value = this.temporalUpscale ? this.frame : 0
     march.temporalUpscaleAmount.value = this.temporalUpscale ? 1 : 0
     // Full-res path: denser steps so the thin high layer (≈500 m) does not onion-skin.
     march.stepSizeScale.value = this.temporalUpscale ? 1 : 0.35
@@ -346,6 +348,9 @@ export class CloudsMarchNode extends TempNode {
     if (camera != null && 'near' in camera && 'far' in camera) {
       this.prepareFrame(camera)
     }
+    // Independent of the 0..15 Bayer phase and of temporalUpscale.
+    this.march.frame.value = this.stbnFrame
+    this.stbnFrame = (this.stbnFrame + 1) % 64
 
     // Capture CloudsMarch WGSL parse details (Firefox often omits them).
     const device = (renderer as { backend?: { device?: GPUDevice } }).backend

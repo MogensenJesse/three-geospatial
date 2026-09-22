@@ -35,14 +35,12 @@ const worleyFbm = /*#__PURE__*/ FnLayout({
 })
 
 export class LocalWeatherNode extends ProceduralTextureNode {
-  override get type(): string {
+  static override get type(): string {
     return 'LocalWeatherNode'
   }
 
-  protected override enableMipmaps = true
-
   constructor(size = new Vector2().setScalar(512)) {
-    super(size)
+    super(size, true)
   }
 
   protected override setupOutputNode(

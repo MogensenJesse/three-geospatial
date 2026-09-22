@@ -31,6 +31,7 @@ import {
 } from 'three/tsl'
 import type { NodeBuilder, TextureNode } from 'three/webgpu'
 
+import { qualityPresets } from '../qualityPresets'
 import type { CloudsEnvironment } from './CloudsEnvironment'
 import { marchCloudOpticalDepth } from './cloudOpticalDepth'
 import {
@@ -62,6 +63,9 @@ import { sampleShadowOpticalDepth } from './shadowSampling'
 
 const RECIPROCAL_PI4 = /*#__PURE__*/ float(1 / (4 * Math.PI))
 
+/** High-preset march defaults so a standalone node matches CloudsNode. */
+const highClouds = qualityPresets.high.clouds
+
 export const marchResultStruct = /*#__PURE__*/ struct(
   {
     color: 'vec4',
@@ -75,10 +79,14 @@ export type MarchResultNode = ReturnType<typeof marchResultStruct>
 
 /** Meter-based cloud marching and host-lighting controls. */
 export class CloudsMarchParameters {
-  readonly maxIterationCount = uniform(64).setName('maxIterationCount')
-  readonly minStepSize = uniform(200).setName('minStepSize')
-  readonly maxStepSize = uniform(2000).setName('maxStepSize')
-  readonly maxRayDistance = uniform(5e4).setName('maxRayDistance')
+  readonly maxIterationCount = uniform(highClouds.maxIterationCount).setName(
+    'maxIterationCount'
+  )
+  readonly minStepSize = uniform(highClouds.minStepSize).setName('minStepSize')
+  readonly maxStepSize = uniform(highClouds.maxStepSize).setName('maxStepSize')
+  readonly maxRayDistance = uniform(highClouds.maxRayDistance).setName(
+    'maxRayDistance'
+  )
   readonly cameraNear = uniform(1).setName('cloudsCameraNear')
   readonly cameraFar = uniform(1e8).setName('cloudsCameraFar')
   readonly temporalJitter = uniform(new Vector2()).setName(
@@ -98,41 +106,66 @@ export class CloudsMarchParameters {
   readonly viewReprojectionMatrix = uniform(new Matrix4()).setName(
     'cloudsViewReprojectionMatrix'
   )
-  /** -1 uses BSM, -2 visualizes depth; non-negative forces optical depth. */
+  /**
+   * -1 normal lighting, -3 local optical depth, -4 BSM optical depth,
+   * -5 unshadowed lighting; non-negative forces optical depth.
+   */
   readonly shadowDebugOpticalDepth = uniform(-1).setName(
     'shadowDebugOpticalDepth'
   )
-  readonly perspectiveStepScale = uniform(1.02).setName('perspectiveStepScale')
-  readonly minDensity = uniform(1e-4).setName('minDensity')
-  readonly minExtinction = uniform(1e-4).setName('minExtinction')
-  readonly minTransmittance = uniform(1e-1).setName('minTransmittance')
+  readonly perspectiveStepScale = uniform(
+    highClouds.perspectiveStepScale
+  ).setName('perspectiveStepScale')
+  readonly minDensity = uniform(highClouds.minDensity).setName('minDensity')
+  readonly minExtinction = uniform(highClouds.minExtinction).setName(
+    'minExtinction'
+  )
+  readonly minTransmittance = uniform(highClouds.minTransmittance).setName(
+    'minTransmittance'
+  )
 
-  readonly maxIterationCountToSun = uniform(0).setName('maxIterationCountToSun')
-  readonly minSecondaryStepSize = uniform(100).setName('minSecondaryStepSize')
-  readonly secondaryStepScale = uniform(2).setName('secondaryStepScale')
+  readonly maxIterationCountToSun = uniform(
+    highClouds.secondaryIterationCount
+  ).setName('maxIterationCountToSun')
+  readonly minSecondaryStepSize = uniform(
+    highClouds.minSecondaryStepSize
+  ).setName('minSecondaryStepSize')
+  readonly secondaryStepScale = uniform(highClouds.secondaryStepScale).setName(
+    'secondaryStepScale'
+  )
 
   readonly skyLightScale = uniform(1).setName('skyLightScale')
   readonly scatterAnisotropy1 = uniform(0.7).setName('scatterAnisotropy1')
   readonly scatterAnisotropy2 = uniform(-0.2).setName('scatterAnisotropy2')
   readonly scatterAnisotropyMix = uniform(0.5).setName('scatterAnisotropyMix')
-  readonly multiScatteringOctaves = uniform(4, 'int').setName(
-    'multiScatteringOctaves'
-  )
+  readonly multiScatteringOctaves = uniform(
+    highClouds.multiScatteringOctaves,
+    'int'
+  ).setName('multiScatteringOctaves')
 
-  readonly maxIterationCountToGround = uniform(0).setName(
-    'maxIterationCountToGround'
+  readonly maxIterationCountToGround = uniform(
+    highClouds.groundIterationCount
+  ).setName('maxIterationCountToGround')
+  readonly powderScale = uniform(highClouds.powderScale).setName('powderScale')
+  readonly powderExponent = uniform(highClouds.powderExponent).setName(
+    'powderExponent'
   )
-  readonly powderScale = uniform(0.8).setName('powderScale')
-  readonly powderExponent = uniform(150).setName('powderExponent')
-  readonly groundBounceScale = uniform(1).setName('groundBounceScale')
+  readonly groundBounceScale = uniform(highClouds.groundBounceScale).setName(
+    'groundBounceScale'
+  )
   /** 0 = approximate dual-lobe, 1 = accurate (Draine + HG mix). */
-  readonly phaseFunctionMode = uniform(0, 'int').setName('phaseFunctionMode')
+  readonly phaseFunctionMode = uniform(
+    highClouds.phaseFunctionMode === 'accurate' ? 1 : 0,
+    'int'
+  ).setName('phaseFunctionMode')
 
   readonly resolution = uniform(new Vector2(1, 1)).setName('cloudsResolution')
-  /** Host frame index for optional STBN jitter. */
+  /** STBN time-slice index, 0..63. Not the Bayer/TAAU phase. */
   readonly frame = uniform(0, 'int').setName('cloudsFrame')
   /** 1 when Bayer TAAU is on; 0 freezes march jitter at 0.5. */
-  readonly temporalUpscaleAmount = uniform(0).setName('cloudsTemporalUpscaleAmount')
+  readonly temporalUpscaleAmount = uniform(0).setName(
+    'cloudsTemporalUpscaleAmount'
+  )
   /** 1 = STBN/hash ray-start jitter live; 0 freezes jitter at 0 (debug stills). */
   readonly stepJitterScale = uniform(1).setName('cloudsStepJitterScale')
   /** <1 densifies steps when TAAU is off (thin high-layer onion-skin). */
@@ -424,7 +457,8 @@ export function setupCloudsMarch(
       const stepSize = march.minStepSize
         .mul(worldScale)
         .add(march.perspectiveStepScale.sub(1).mul(rayNearFar.x))
-        .mul(march.stepSizeScale).toVar()
+        .mul(march.stepSizeScale)
+        .toVar()
       const rayDistance = stepSize.mul(jitter).mul(2).toVar()
       const rayStartTexelsPerPixel = pow(2, mipLevel)
 
@@ -455,7 +489,9 @@ export function setupCloudsMarch(
           )
             .log2()
             .toVar()
-          const maxStepWorld = march.maxStepSize.mul(worldScale).mul(march.stepSizeScale)
+          const maxStepWorld = march.maxStepSize
+            .mul(worldScale)
+            .mul(march.stepSizeScale)
 
           If(
             insideLayerIntervals(
@@ -536,10 +572,6 @@ export function setupCloudsMarch(
                           layers,
                           shadow: context.shadow!,
                           shadowAtlas,
-                          debugMode:
-                            variant.debugOpticalDepth !== -1
-                              ? march.shadowDebugOpticalDepth
-                              : undefined,
                           viewMatrix: viewMatrix(camera)
                         },
                         positionWorld,
@@ -628,9 +660,7 @@ export function setupCloudsMarch(
                       .mul(march.skyLightScale)
                   )
 
-                  if (variant.debugOpticalDepth === -2) {
-                    radiance.assign(vec3(opticalDepth))
-                  } else if (variant.debugOpticalDepth === -5) {
+                  if (variant.debugOpticalDepth === -5) {
                     radiance.assign(
                       environment.sunIrradianceNode.mul(
                         approximateMultipleScattering(
@@ -643,10 +673,6 @@ export function setupCloudsMarch(
                         )
                       )
                     )
-                  } else if (variant.debugOpticalDepth === -6) {
-                    radiance.assign(vec3(opticalDepth.negate().exp()))
-                  } else if (variant.debugOpticalDepth <= -11) {
-                    radiance.assign(vec3(opticalDepth))
                   }
                   radiance.mulAssign(media.get('scattering'))
 
@@ -720,12 +746,12 @@ export function setupCloudsMarch(
         .add(cameraPosition)
       const prevClip = march.reprojectionMatrix.mul(vec4(frontPositionWorld, 1))
       const prevNdc = prevClip.xy.div(prevClip.w)
-prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
+      prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
     }).Else(() => {
       const frontView = positionView.mul(frontDepth)
       const prevClip = march.viewReprojectionMatrix.mul(vec4(frontView, 1))
       const prevNdc = prevClip.xy.div(prevClip.w)
-prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
+      prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
     })
     // a=1 required: MRT packs vec4; a=0 under material blending can zero RGB.
     const velocity = screenUV.sub(prevUv)

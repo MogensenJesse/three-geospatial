@@ -37,18 +37,22 @@ export abstract class ProceduralTextureNode extends TempNode {
   /**
    * When true, the storage texture keeps a mip chain and auto-updates after
    * compute writes (local weather / turbulence). Shape/detail stay false.
+   * Set from the constructor argument before the storage texture is created.
+   * A subclass field initializer would run too late under useDefineForClassFields.
    */
   protected enableMipmaps = false
 
-  readonly texture = this.createStorageTexture()
+  readonly texture: StorageTexture
 
   /** When true, the next setup() dispatches a one-shot compute fill. */
   needsCompute = true
 
   private readonly textureNode: TextureNode
 
-  constructor(size = new Vector2(1)) {
+  constructor(size = new Vector2(1), enableMipmaps = false) {
     super(null)
+    this.enableMipmaps = enableMipmaps
+    this.texture = this.createStorageTexture()
     this.textureNode = outputTexture(this, this.texture)
     this.setSize(size.x, size.y)
   }

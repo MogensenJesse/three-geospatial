@@ -62,7 +62,7 @@ export function applyCloudsQualitySettings(
   shadowMarch.minExtinction.value = shadowQuality.minExtinction
   shadowMarch.minTransmittance.value = shadowQuality.minTransmittance
 
-  host.shadowNode.setMapSize(shadowQuality.mapSize.x)
+  host.shadowNode.setMapSize(shadowQuality.mapSize)
   host.shadowNode.setCascadeCount(shadowQuality.cascadeCount)
   host.shadowNode.resolveNode.temporalAlpha.value = shadowQuality.temporalAlpha
   host.shadowNode.resolveNode.varianceGamma.value = shadowQuality.temporalGamma

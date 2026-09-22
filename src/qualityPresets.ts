@@ -1,8 +1,12 @@
 // src/qualityPresets.ts
 
-import { Vector2 } from 'three'
-
 export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra'
+
+/**
+ * Highest multi-scattering octave count the march variant will compile.
+ * Presets must stay at or below this; ultra uses the ceiling.
+ */
+export const MAX_MULTI_SCATTERING_OCTAVES = 12
 
 export type PhaseFunctionMode = 'approximate' | 'accurate'
 
@@ -30,7 +34,8 @@ export interface CloudMarchQuality {
 
 export interface CloudShadowQuality {
   cascadeCount: number
-  mapSize: Vector2
+  /** Square shadow-map resolution. ShadowMarchNode.setMapSize is square. */
+  mapSize: number
   maxIterationCount: number
   minStepSize: number
   maxStepSize: number
@@ -74,7 +79,7 @@ const highClouds: CloudMarchQuality = {
 
 const highShadow: CloudShadowQuality = {
   cascadeCount: 3,
-  mapSize: /*#__PURE__*/ new Vector2(512, 512),
+  mapSize: 512,
   maxIterationCount: 50,
   minStepSize: 100,
   maxStepSize: 1000,
@@ -118,7 +123,7 @@ const low: CloudQualitySettings = {
   shadow: {
     ...highShadow,
     cascadeCount: 2,
-    mapSize: /*#__PURE__*/ new Vector2(256, 256),
+    mapSize: 256,
     maxIterationCount: 25,
     minDensity: 1e-4,
     minExtinction: 1e-4,
@@ -143,7 +148,7 @@ const medium: CloudQualitySettings = {
   },
   shadow: {
     ...highShadow,
-    mapSize: /*#__PURE__*/ new Vector2(256, 256),
+    mapSize: 256,
     minDensity: 1e-4,
     minExtinction: 1e-4,
     shapeDetail: true,
@@ -159,11 +164,11 @@ const ultra: CloudQualitySettings = {
     ...highClouds,
     maxIterationCount: 768,
     minStepSize: 10,
-    multiScatteringOctaves: 12
+    multiScatteringOctaves: MAX_MULTI_SCATTERING_OCTAVES
   },
   shadow: {
     ...highShadow,
-    mapSize: /*#__PURE__*/ new Vector2(1024, 1024),
+    mapSize: 1024,
     maxIterationCount: 64
   }
 }
@@ -178,7 +183,7 @@ export const qualityPresets: Record<QualityPreset, CloudQualitySettings> = {
 /** Default / high reference — matches WebGL `defaults`. */
 export const defaults = webglHighReference
 
-/** Deep-clone settings so consumers cannot mutate shared preset vectors. */
+/** Copy settings so consumers cannot mutate the shared preset objects. */
 export function cloneQualitySettings(
   settings: CloudQualitySettings
 ): CloudQualitySettings {
@@ -188,9 +193,6 @@ export function cloneQualitySettings(
     shapeDetail: settings.shapeDetail,
     turbulence: settings.turbulence,
     clouds: { ...settings.clouds },
-    shadow: {
-      ...settings.shadow,
-      mapSize: settings.shadow.mapSize.clone()
-    }
+    shadow: { ...settings.shadow }
   }
 }

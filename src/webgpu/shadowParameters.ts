@@ -3,13 +3,18 @@
 import { Matrix4, Vector2 } from 'three'
 import { uniform, uniformArray } from 'three/tsl'
 
+import { qualityPresets } from '../qualityPresets'
+
 /** Max cascades supported by the Phase C WebGPU spike (matches WebGL). */
 export const MAX_SHADOW_CASCADES = 4
 
 /** Uniforms shared by shadow march and clouds BSM sampling. */
 export class ShadowParameterNodes {
   readonly enabled = uniform(1).setName('shadowEnabled')
-  readonly cascadeCount = uniform(2, 'int').setName('shadowCascadeCount')
+  readonly cascadeCount = uniform(
+    qualityPresets.high.shadow.cascadeCount,
+    'int'
+  ).setName('shadowCascadeCount')
   readonly shadowFar = uniform(0).setName('shadowFar')
   readonly shadowCameraNear = uniform(1).setName('shadowCameraNear')
 
