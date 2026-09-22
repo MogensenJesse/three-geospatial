@@ -61,9 +61,7 @@ const closestOffsets: Array<readonly [number, number]> = [
   [1, 1]
 ]
 
-// WebGL cloudsResolve.frag does NOT define VARIANCE_9_SAMPLES, so
-// varianceClipping.glsl uses the 4-neighbour cross (+ current = 5).
-// Shadow resolve keeps the 9-sample neighbourhood separately.
+// Full-res TAA keeps the 4-neighbour cross (+ current = 5).
 const varianceOffsets: Array<readonly [number, number]> = [
   [1, 0],
   [0, -1],
@@ -71,8 +69,22 @@ const varianceOffsets: Array<readonly [number, number]> = [
   [-1, 0]
 ]
 
+// TAAU clips against the full 3x3 around the reconstruction sample.
+const upscaleVarianceOffsets: Array<readonly [number, number]> = [
+  [-1, -1],
+  [-1, 0],
+  [-1, 1],
+  [0, -1],
+  [0, 1],
+  [1, -1],
+  [1, 0],
+  [1, 1]
+]
+
 /** Full-res pixels. w = 1 on this frame's Bayer sample, ~0.36 one pixel away. */
 const TEMPORAL_UPSCALE_SIGMA = 0.7
+/** Still pixels use varianceGamma * this, so a noisy low-res box does not clip history. */
+const TEMPORAL_UPSCALE_STATIC_GAMMA = 2
 
 function sampleClosestCloudVelocity(
   velocityNode: TextureNode,
@@ -137,13 +149,20 @@ class CloudsResolveColorNode extends TempNode {
           .and(prevUv.lessThanEqual(1).all())
 
         const historyReproj = texture(owner.historyNode, prevUv, int(0))
-        // 4-neighbour cross around the reconstruction sample (+ center = 5).
+        // 3x3 around the reconstruction sample (+ center = 9). Still pixels
+        // widen the box; motion falls back to varianceGamma.
+        const motion = motionFactor(closest.gb)
+        const gamma = mix(
+          owner.varianceGamma.mul(TEMPORAL_UPSCALE_STATIC_GAMMA),
+          owner.varianceGamma,
+          motion
+        )
         const inputTexelSize = lowResSize.reciprocal()
         const clipped = varianceClip({
-          offsets: varianceOffsets,
+          offsets: upscaleVarianceOffsets,
           current: recon,
           history: historyReproj,
-          gamma: owner.varianceGamma,
+          gamma,
           sampleNeighbor: (x, y) =>
             texture(
               owner.inputNode,
@@ -151,7 +170,6 @@ class CloudsResolveColorNode extends TempNode {
             )
         })
         // OOB or fast motion falls back to the reconstruction, not a block texel.
-        const motion = motionFactor(closest.gb)
         const temporal = mix(
           clipped,
           recon,
