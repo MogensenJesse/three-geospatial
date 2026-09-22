@@ -18,7 +18,10 @@ export interface CloudsQualityHost {
   resetTemporalHistory(): unknown
 }
 
-/** Push {@link CloudQualitySettings} onto march + shadow nodes and rebind the BSM atlas. */
+/**
+ * Push {@link CloudQualitySettings} onto march and shadow nodes and rebind
+ * the BSM cascade array.
+ */
 export function applyCloudsQualitySettings(
   host: CloudsQualityHost,
   settings: CloudQualitySettings
@@ -28,11 +31,8 @@ export function applyCloudsQualitySettings(
 
   host.resolutionScale = next.resolutionScale
   host.temporalUpscale = next.temporalUpscale
-  // Shared uniforms: enable detail/turbulence if cloud or shadow preset asks.
-  host.parameters.shapeDetailEnabled.value =
-    next.shapeDetail || shadowQuality.shapeDetail
-  host.parameters.turbulenceEnabled.value =
-    next.turbulence || shadowQuality.turbulence
+  host.parameters.shapeDetailEnabled.value = next.shapeDetail
+  host.parameters.turbulenceEnabled.value = next.turbulence
 
   const march = host.marchNode.march
   march.multiScatteringOctaves.value = cloudQuality.multiScatteringOctaves
@@ -67,10 +67,10 @@ export function applyCloudsQualitySettings(
   host.shadowNode.resolveNode.temporalAlpha.value = shadowQuality.temporalAlpha
   host.shadowNode.resolveNode.varianceGamma.value = shadowQuality.temporalGamma
 
-  // Atlas RT recreates on map/cascade change; rebind so sampling never keeps a
+  // Cascade array recreates on map/cascade change; rebind so sampling never keeps a
   // disposed GPU texture after preset switches.
   host.marchNode.shadowAtlas = host.shadowNode.getAtlasNode()
-  // No-ops when Phase C variant key is unchanged (e.g. re-apply same preset).
+  // No-ops when the march variant key is unchanged (for example, re-applying the same preset).
   host.marchNode.invalidateMaterial()
   host.shadowNode.resolveNode.reset()
   host.resetTemporalHistory()

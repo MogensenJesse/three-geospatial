@@ -2,7 +2,6 @@
 
 import { Vector2 } from 'three'
 import { float, int, Loop, smoothstep, vec3, vec4 } from 'three/tsl'
-import type { NodeBuilder } from 'three/webgpu'
 
 import { FnLayout } from './internal/FnLayout'
 import type { Node } from './internal/node'
@@ -43,10 +42,7 @@ export class LocalWeatherNode extends ProceduralTextureNode {
     super(size, true)
   }
 
-  protected override setupOutputNode(
-    uv: Node<'vec2'>,
-    builder: NodeBuilder
-  ): Node {
+  protected override setupOutputNode(uv: Node<'vec2'>): Node {
     const output = vec4().toVar()
 
     // Mid clouds

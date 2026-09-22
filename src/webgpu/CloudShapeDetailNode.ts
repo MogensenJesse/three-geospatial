@@ -1,7 +1,7 @@
 // src/webgpu/CloudShapeDetailNode.ts
 
 import { vec2, vec3, vec4 } from 'three/tsl'
-import { type NodeBuilder, Vector3 } from 'three/webgpu'
+import { Vector3 } from 'three/webgpu'
 
 import { CLOUD_SHAPE_DETAIL_TEXTURE_SIZE } from '../constants'
 import type { Node } from './internal/node'
@@ -17,10 +17,7 @@ export class CloudShapeDetailNode extends ProceduralTexture3DNode {
     super(size)
   }
 
-  protected override setupOutputNode(
-    uvw: Node<'vec3'>,
-    builder: NodeBuilder
-  ): Node {
+  protected override setupOutputNode(uvw: Node<'vec3'>): Node {
     const cellCount = 2
     const noise = vec4(
       stackableWorleyNoise(uvw, cellCount),

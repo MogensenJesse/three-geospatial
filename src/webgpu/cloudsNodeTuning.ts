@@ -1,9 +1,5 @@
 // src/webgpu/cloudsNodeTuning.ts
 
-import type { Vector2, Vector3 } from 'three'
-import type { TextureNode } from 'three/webgpu'
-import type { PhaseFunctionMode } from '../qualityPresets'
-
 /** Structural host so tuning can install without circular CloudsNode import. */
 export interface CloudsNodeTuningHost {
   marchNode: any
@@ -12,41 +8,6 @@ export interface CloudsNodeTuningHost {
   parameters: any
   environment: any
   resetTemporalHistory(): unknown
-}
-
-export interface CloudsNodeTuningProps {
-  depthNode: TextureNode | null
-  resolutionScale: number
-  temporalUpscale: boolean
-  temporalAlpha: number
-  temporalHistoryEnabled: boolean
-  varianceGamma: number
-  shapeDetailEnabled: boolean
-  turbulenceEnabled: boolean
-  scatteringCoefficient: number
-  absorptionCoefficient: number
-  turbulenceDisplacement: number
-  readonly localWeatherRepeat: Vector2
-  readonly localWeatherOffset: Vector2
-  readonly shapeRepeat: Vector3
-  readonly shapeOffset: Vector3
-  readonly shapeDetailRepeat: Vector3
-  readonly shapeDetailOffset: Vector3
-  readonly turbulenceRepeat: Vector2
-  secondaryIterationCount: number
-  skyLightScale: number
-  stepJitterScale: number
-  powderScale: number
-  powderExponent: number
-  groundBounceScale: number
-  groundIterationCount: number
-  phaseFunctionMode: PhaseFunctionMode
-  shadowEnabled: boolean
-  shadowMapSize: number
-  shadowCascadeCount: number
-  shadowFilterRadius: number
-  shadowTemporalAlpha: number
-  shadowTemporalGamma: number
 }
 
 export function installCloudsNodeTuning(proto: object): void {

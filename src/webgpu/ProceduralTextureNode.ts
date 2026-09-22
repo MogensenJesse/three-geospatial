@@ -57,7 +57,7 @@ export abstract class ProceduralTextureNode extends TempNode {
     this.setSize(size.x, size.y)
   }
 
-  protected createStorageTexture(name?: string): StorageTexture {
+  protected createStorageTexture(): StorageTexture {
     const texture = new StorageTexture(1, 1)
     texture.type = UnsignedByteType
     texture.magFilter = LinearFilter
@@ -76,8 +76,7 @@ export abstract class ProceduralTextureNode extends TempNode {
       texture.minFilter = LinearFilter
     }
 
-    const typeName = (this.constructor as typeof Node).type
-    texture.name = name != null ? `${typeName}.${name}` : typeName
+    texture.name = (this.constructor as typeof Node).type
 
     return texture
   }
@@ -94,10 +93,7 @@ export abstract class ProceduralTextureNode extends TempNode {
     return this
   }
 
-  protected abstract setupOutputNode(
-    uv: Node<'vec2'>,
-    builder: NodeBuilder
-  ): Node
+  protected abstract setupOutputNode(uv: Node<'vec2'>): Node
 
   override setup(builder: NodeBuilder): ThreeNode | null | undefined {
     const { width, height } = this.texture
@@ -120,11 +116,7 @@ export abstract class ProceduralTextureNode extends TempNode {
         // Texel centers, matching WebGL ProceduralTexture UV convention.
         const uv = textureCoordinate.add(0.5).div(vec2(width, height))
 
-        textureStore(
-          this.texture,
-          textureCoordinate,
-          this.setupOutputNode(uv, builder)
-        )
+        textureStore(this.texture, textureCoordinate, this.setupOutputNode(uv))
       })().compute(width * height, [8, 8, 1])
 
       void builder.renderer.compute(computeNode)

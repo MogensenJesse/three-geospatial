@@ -86,14 +86,6 @@ export class CloudLayers extends Array<CloudLayer> {
     return this
   }
 
-  reset(): this {
-    this[0].copy(CloudLayer.DEFAULT)
-    this[1].copy(CloudLayer.DEFAULT)
-    this[2].copy(CloudLayer.DEFAULT)
-    this[3].copy(CloudLayer.DEFAULT)
-    return this
-  }
-
   clone(): CloudLayers {
     return new CloudLayers(this)
   }

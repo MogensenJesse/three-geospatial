@@ -2,7 +2,6 @@
 
 import { Vector2 } from 'three'
 import { int, vec3, vec4 } from 'three/tsl'
-import type { NodeBuilder } from 'three/webgpu'
 
 import { FnLayout } from './internal/FnLayout'
 import type { Node } from './internal/node'
@@ -59,10 +58,7 @@ export class TurbulenceNode extends ProceduralTextureNode {
     super(size, true)
   }
 
-  protected override setupOutputNode(
-    uv: Node<'vec2'>,
-    builder: NodeBuilder
-  ): Node {
+  protected override setupOutputNode(uv: Node<'vec2'>): Node {
     return vec4(curl(vec3(uv, 0)).mul(0.5).add(0.5), 1)
   }
 }

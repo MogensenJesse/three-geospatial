@@ -118,7 +118,7 @@ function isEnvironmentOptions(
   return 'camera' in value && 'mapSize' in value
 }
 
-/** Normalize legacy env args and the Phase 7 facade into one shape. */
+/** Normalize legacy env args and the facade into one shape. */
 export function resolveCloudsOptions(
   options: CloudsOptions
 ): ResolvedCloudsOptions {

@@ -336,7 +336,3 @@ export class ShadowResolveNode extends TempNode {
     super.dispose()
   }
 }
-
-export const shadowResolve = (
-  ...args: ConstructorParameters<typeof ShadowResolveNode>
-): ShadowResolveNode => new ShadowResolveNode(...args)

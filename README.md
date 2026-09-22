@@ -24,7 +24,7 @@ Import from the package root:
 | `qualityPresets` / `applyQualitySettings` via node | Low/medium/high/ultra |
 | `CloudsEnvironment` | Camera / map / sun / irradiance container |
 
-Internals (`march`, atlas, resolve shaders) are not part of the root barrel.
+Internals (`march`, cascade array, resolve shaders) are not part of the root barrel.
 `CloudsNode.marchNode` / `shadowNode` exist for advanced tooling but are not
 required for normal integration.
 
@@ -53,11 +53,11 @@ npm run build:library
 npm pack
 ```
 
-In the other project (path or tarball):
+In the other project, install the tarball `npm pack` printed, or point `file:` at this repo:
 
 ```sh
-npm install ../three-geospatial/webgpu-clouds-0.1.0.tgz
-# or: npm install file:../three-geospatial
+npm install ./webgpu-clouds-0.1.0.tgz
+# or: npm install file:../webgpu-clouds
 ```
 
 Peer dependency: `three@>=0.185.0 <0.187.0` (developed against r186; r185 should work).

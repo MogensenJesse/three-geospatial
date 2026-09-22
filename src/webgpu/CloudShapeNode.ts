@@ -2,7 +2,6 @@
 
 import { Vector3 } from 'three'
 import { int, vec2, vec3, vec4 } from 'three/tsl'
-import type { NodeBuilder } from 'three/webgpu'
 
 import { CLOUD_SHAPE_TEXTURE_SIZE } from '../constants'
 import { FnLayout } from './internal/FnLayout'
@@ -62,10 +61,7 @@ export class CloudShapeNode extends ProceduralTexture3DNode {
     super(size)
   }
 
-  protected override setupOutputNode(
-    uvw: Node<'vec3'>,
-    builder: NodeBuilder
-  ): Node {
+  protected override setupOutputNode(uvw: Node<'vec3'>): Node {
     return perlinWorley(uvw).remap(worleyFbm(uvw).sub(1), 1)
   }
 }

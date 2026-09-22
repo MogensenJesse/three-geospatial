@@ -13,9 +13,11 @@ import {
   int,
   interleavedGradientNoise,
   Loop,
+  logarithmicDepthToViewZ,
   max,
   min,
   mix,
+  perspectiveDepthToViewZ,
   positionGeometry,
   pow,
   remapClamp,
@@ -38,12 +40,7 @@ import {
   type CloudsMarchVariant,
   resolveCloudsMarchVariant
 } from './cloudsMarchVariant'
-import {
-  inverseProjectionMatrix,
-  inverseViewMatrix,
-  viewMatrix
-} from './internal/accessors'
-import { depthToViewZ } from './internal/depth'
+import { inverseViewMatrix, viewMatrix } from './internal/accessors'
 import { FnLayout } from './internal/FnLayout'
 import type { Node } from './internal/node'
 import type {
@@ -162,10 +159,6 @@ export class CloudsMarchParameters {
   readonly resolution = uniform(new Vector2(1, 1)).setName('cloudsResolution')
   /** STBN time-slice index, 0..63. Not the Bayer/TAAU phase. */
   readonly frame = uniform(0, 'int').setName('cloudsFrame')
-  /** 1 when Bayer TAAU is on; 0 freezes march jitter at 0.5. */
-  readonly temporalUpscaleAmount = uniform(0).setName(
-    'cloudsTemporalUpscaleAmount'
-  )
   /** 1 = STBN/hash ray-start jitter live; 0 freezes jitter at 0 (debug stills). */
   readonly stepJitterScale = uniform(1).setName('cloudsStepJitterScale')
   /** <1 densifies steps when TAAU is off (thin high-layer onion-skin). */
@@ -379,10 +372,9 @@ export function setupCloudsMarch(
         .r.toVar()
       If(depth.lessThan(1 - 1e-7), () => {
         sceneViewZ.assign(
-          depthToViewZ(depth, march.cameraNear, march.cameraFar, {
-            perspective: true,
-            logarithmic: builder.renderer.logarithmicDepthBuffer
-          })
+          builder.renderer.logarithmicDepthBuffer
+            ? logarithmicDepthToViewZ(depth, march.cameraNear, march.cameraFar)
+            : perspectiveDepthToViewZ(depth, march.cameraNear, march.cameraFar)
         )
         const rayDistanceToScene = sceneViewZ
           .negate()
@@ -541,11 +533,11 @@ export function setupCloudsMarch(
               If(
                 media.get('extinction').greaterThan(march.minExtinction),
                 () => {
-                  // Local sun-detail march (Phase 2); BSM fills the remainder.
+                  // Local sun-detail march; BSM fills the remainder.
                   const localOpticalDepth = float(0).toVar()
                   const sunRayDistance = float(0).toVar()
                   const shadowAtlas = context.shadowAtlas
-                  // Phase C: omit local-sun OD march when secondary iterations are 0.
+                  // Omit the local-sun optical-depth march when secondary iterations are 0.
                   if (variant.localSun) {
                     const sunMarch = marchCloudOpticalDepth(
                       { environment, parameters, layers, march },
@@ -559,7 +551,7 @@ export function setupCloudsMarch(
                     sunRayDistance.assign(sunMarch.get('rayDistance'))
                   }
                   const bsmOpticalDepth = float(0).toVar()
-                  // Phase C: BSM + Vogel only in the shadows-on material variant.
+                  // BSM + Vogel only in the shadows-on material variant.
                   if (
                     variant.shadows &&
                     context.shadow != null &&
@@ -593,7 +585,7 @@ export function setupCloudsMarch(
                   const opticalDepth = localOpticalDepth
                     .add(bsmOpticalDepth)
                     .toVar()
-                  // Phase C: optical-depth debug probes only in debug variants.
+                  // Optical-depth debug probes only in debug variants.
                   if (variant.debugOpticalDepth === -3) {
                     opticalDepth.assign(localOpticalDepth)
                   } else if (variant.debugOpticalDepth === -4) {
@@ -612,7 +604,7 @@ export function setupCloudsMarch(
                   )
                   const radiance = direct.toVar()
 
-                  // Phase C: ground-bounce OD omitted when scale/iterations are 0.
+                  // Ground-bounce optical depth omitted when scale or iterations are 0.
                   if (variant.groundBounce) {
                     If(
                       height
@@ -676,7 +668,7 @@ export function setupCloudsMarch(
                   }
                   radiance.mulAssign(media.get('scattering'))
 
-                  // Phase C: powder omitted when scale is 0.
+                  // Powder omitted when scale is 0.
                   if (variant.powder) {
                     radiance.mulAssign(
                       float(1).sub(
@@ -758,12 +750,4 @@ export function setupCloudsMarch(
     const depthVelocity = vec4(frontDepth, velocity, 1)
     return marchResultStruct(outputColor, frontDepth, depthVelocity)
   })() as MarchResultNode
-}
-
-/** @deprecated Use {@link setupCloudsMarch}. */
-export function setupCloudsMarchColor(
-  builder: NodeBuilder,
-  context: MarchCloudsContext
-): Node<'vec4'> {
-  return setupCloudsMarch(builder, context).get('color')
 }

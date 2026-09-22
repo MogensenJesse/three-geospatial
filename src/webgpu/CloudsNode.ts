@@ -42,7 +42,6 @@ import { installCloudsNodeTuning } from './cloudsNodeTuning'
 import type { Node } from './internal/node'
 import { LocalWeatherNode } from './LocalWeatherNode'
 import { CloudLayerParameterNodes, CloudParameterNodes } from './parameters'
-import { ShadowDebugNode } from './ShadowDebugNode'
 import { ShadowMarchNode } from './ShadowMarchNode'
 import { TurbulenceNode } from './TurbulenceNode'
 import { updateCloudLayerParameters } from './updateCloudLayerParameters'
@@ -98,7 +97,6 @@ export class CloudsNode extends TempNode {
   readonly marchNode: CloudsMarchNode
   readonly resolveNode: CloudsResolveNode
   readonly shadowNode: ShadowMarchNode
-  readonly shadowDebugNode: ShadowDebugNode
 
   readonly localWeatherVelocity = new Vector2()
   readonly shapeVelocity = new Vector3()
@@ -151,7 +149,6 @@ export class CloudsNode extends TempNode {
       this.marchNode.getVelocityTextureNode()
     )
     this.marchNode.temporalUpscale = this.resolveNode.temporalUpscale
-    this.shadowDebugNode = new ShadowDebugNode(this.shadowNode.getBufferNodes())
     this.textureNode = this.resolveNode.getTextureNode()
 
     this.installDefaultProcedurals(facade)
@@ -389,7 +386,7 @@ export class CloudsNode extends TempNode {
     return this.shadowNode.getBufferNodes()
   }
 
-  /** Horizontal cascade atlas for BSM sampling (march + host materials). */
+  /** Cascade array for BSM sampling (march + host materials). */
   getShadowAtlasNode(): TextureNode | null {
     return this.shadowNode.getAtlasNode()
   }
@@ -409,7 +406,7 @@ export class CloudsNode extends TempNode {
 
   private applyDebugMarchMode(): void {
     applyDebugMarchMode(this.marchNode.march, this._debugOutput)
-    // Debug probes are a march variant axis (Phase C).
+    // Debug probes are a march variant axis.
     this.marchNode.invalidateMaterial()
   }
 
@@ -530,7 +527,6 @@ export class CloudsNode extends TempNode {
 
   override dispose(): void {
     this.shadowNode.dispose()
-    this.shadowDebugNode.dispose()
     this.resolveNode.dispose()
     this.marchNode.dispose()
     if (this.ownsLocalWeather) this.localWeather?.dispose()

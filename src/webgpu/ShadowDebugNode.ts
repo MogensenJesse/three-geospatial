@@ -25,8 +25,3 @@ export class ShadowDebugNode extends TempNode {
     return source?.sample(screenUV) ?? float(0)
   }
 }
-
-export const shadowDebug = (
-  sources: readonly TextureNode[],
-  cascade?: number
-): ShadowDebugNode => new ShadowDebugNode(sources, cascade)

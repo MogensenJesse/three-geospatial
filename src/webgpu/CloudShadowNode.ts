@@ -2,7 +2,7 @@
 import type { Node as ThreeNode } from 'three/webgpu'
 // src/webgpu/CloudShadowNode.ts
 
-import { clamp, exp, Fn, float, If, mix } from 'three/tsl'
+import { clamp, exp, Fn, float, If } from 'three/tsl'
 import { type NodeBuilder, TempNode } from 'three/webgpu'
 
 import type { CloudsNode } from './CloudsNode'
@@ -83,13 +83,3 @@ export const cloudShadow = (
   positionWorld: Node<'vec3'>,
   jitter?: Node<'float'>
 ): CloudShadowNode => new CloudShadowNode(clouds, positionWorld, jitter)
-
-/** Blend between unshadowed (1) and cloud transmittance for a host toggle. */
-export const cloudShadowFactor = (
-  clouds: CloudsNode,
-  positionWorld: Node<'vec3'>,
-  enabled: Node<'float'>,
-  jitter?: Node<'float'>
-): Node<'float'> => {
-  return mix(float(1), cloudShadow(clouds, positionWorld, jitter), enabled)
-}

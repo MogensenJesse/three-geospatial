@@ -239,13 +239,6 @@ export function sampleWeather(
   return weatherSampleStruct(heightFraction, density)
 }
 
-export interface SampleMediaOptions {
-  /** Skip shape-detail sampling even if the uniform flag is enabled. */
-  forceDisableShapeDetail?: boolean
-  /** Skip turbulence even if the uniform flag is enabled. */
-  forceDisableTurbulence?: boolean
-}
-
 /**
  * Combine weather shells with shape / detail / turbulence into media
  * coefficients. Port of `sampleMedia` in clouds.glsl.
@@ -257,8 +250,7 @@ export function sampleMedia(
   position: Node<'vec3'>,
   uv: Node<'vec2'>,
   mipLevel: Node<'float'>,
-  jitter: Node<'float'>,
-  options: SampleMediaOptions = {}
+  jitter: Node<'float'>
 ): MediaSampleNode {
   const { shapeTexture } = parameters
   if (shapeTexture == null) {
@@ -269,10 +261,7 @@ export function sampleMedia(
   const heightFraction = weather.get('heightFraction')
 
   const turbulence = vec3(0).toVar()
-  if (
-    options.forceDisableTurbulence !== true &&
-    parameters.turbulenceTexture != null
-  ) {
+  if (parameters.turbulenceTexture != null) {
     const turbulenceTexture = parameters.turbulenceTexture
     If(parameters.turbulenceEnabled, () => {
       const turbulenceUv = uv
@@ -296,10 +285,7 @@ export function sampleMedia(
     remapClamp(density, float(1).sub(shape).mul(layers.shapeAmounts), vec4(1))
   )
 
-  if (
-    options.forceDisableShapeDetail !== true &&
-    parameters.shapeDetailTexture != null
-  ) {
+  if (parameters.shapeDetailTexture != null) {
     const shapeDetailTexture = parameters.shapeDetailTexture
     If(
       parameters.shapeDetailEnabled.and(

@@ -45,24 +45,6 @@ const { resetRendererState, restoreRendererState } = RendererUtils
 
 const sizeScratch = /*#__PURE__*/ new Vector2()
 
-interface CloudsMarchDebug {
-  __cloudsMarchShaderHook?: boolean
-  __cloudsMarchShaderCode?: string
-  __cloudsMarchShaderMessages?: Array<{
-    type: string
-    message: string
-    lineNum: number
-    linePos: number
-  }>
-  __cloudsMarchShaderError?: {
-    label: string
-    message: string
-    lineNum: number
-    linePos: number
-    snippet: string
-  }
-}
-
 /**
  * Deferred march MRT graph. This must remain an {@link MRTNode}; hiding `mrt`
  * behind a plain TempNode prevents NodeMaterial from emitting the WGSL output
@@ -116,7 +98,7 @@ export class CloudsMarchNode extends TempNode {
   /** STBN slice. Advances every rendered frame, including when TAAU is off. */
   private stbnFrame = 0
 
-  /** Optional BSM inputs (Phase C). */
+  /** Optional BSM inputs. */
   shadow: ShadowParameterNodes | null = null
   shadowAtlas: TextureNode | null = null
 
@@ -261,7 +243,6 @@ export class CloudsMarchNode extends TempNode {
     const rangeCamera = camera as Camera & { near: number; far: number }
     march.cameraNear.value = rangeCamera.near
     march.cameraFar.value = rangeCamera.far
-    march.temporalUpscaleAmount.value = this.temporalUpscale ? 1 : 0
     // Full-res path: denser steps so the thin high layer (≈500 m) does not onion-skin.
     march.stepSizeScale.value = this.temporalUpscale ? 1 : 0.35
 
@@ -352,55 +333,6 @@ export class CloudsMarchNode extends TempNode {
     this.march.frame.value = this.stbnFrame
     this.stbnFrame = (this.stbnFrame + 1) % 64
 
-    // Capture CloudsMarch WGSL parse details (Firefox often omits them).
-    const device = (renderer as { backend?: { device?: GPUDevice } }).backend
-      ?.device
-    if (
-      device != null &&
-      (globalThis as CloudsMarchDebug).__cloudsMarchShaderHook !== true
-    ) {
-      ;(globalThis as CloudsMarchDebug).__cloudsMarchShaderHook = true
-      const original = device.createShaderModule.bind(device)
-      device.createShaderModule = descriptor => {
-        const module = original(descriptor)
-        const label = descriptor.label ?? ''
-        if (label.includes('CloudsMarch')) {
-          const code = descriptor.code ?? ''
-          const debug = globalThis as CloudsMarchDebug
-          debug.__cloudsMarchShaderCode = code
-          void module.getCompilationInfo().then(info => {
-            debug.__cloudsMarchShaderMessages = info.messages.map(message => ({
-              type: message.type,
-              message: message.message,
-              lineNum: message.lineNum,
-              linePos: message.linePos
-            }))
-            for (const message of info.messages) {
-              if (message.type !== 'error') continue
-              const lines = code.split('\n')
-              const start = Math.max(0, message.lineNum - 6)
-              const end = Math.min(lines.length, message.lineNum + 6)
-              const snippet = lines
-                .slice(start, end)
-                .map((line, i) => `${start + i + 1}: ${line}`)
-                .join('\n')
-              const payload = {
-                label,
-                message: message.message,
-                lineNum: message.lineNum,
-                linePos: message.linePos,
-                snippet
-              }
-              ;(globalThis as CloudsMarchDebug).__cloudsMarchShaderError =
-                payload
-              console.error('[CloudsMarch WGSL]', payload.message, snippet)
-            }
-          })
-        }
-        return module
-      }
-    }
-
     this.rendererState = resetRendererState(renderer, this.rendererState!)
     renderer.setRenderTarget(this.renderTarget)
     // Transparent clear so empty texels don't cover the sky.
@@ -424,7 +356,7 @@ export class CloudsMarchNode extends TempNode {
 
   /**
    * Rebuild the march fragment graph for the current variant key.
-   * No-ops when the key is unchanged (Phase E — skip redundant compiles).
+   * No-ops when the key is unchanged.
    */
   /**
    * @param force - Rebuild even when the variant key is unchanged (e.g. WGSL dump).
@@ -460,7 +392,3 @@ export class CloudsMarchNode extends TempNode {
     super.dispose()
   }
 }
-
-export const cloudsMarch = (
-  ...args: ConstructorParameters<typeof CloudsMarchNode>
-): CloudsMarchNode => new CloudsMarchNode(...args)

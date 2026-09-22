@@ -19,8 +19,8 @@ type CopyRenderer = {
 
 /**
  * Cascade array texture (one layer per cascade) for BSM sampling.
- * Matches WebGL's sampler2DArray shape more closely than a horizontal atlas:
- * pack still uses N copies, but UV remap math leaves the hot path.
+ * Matches WebGL's sampler2DArray: pack still uses N copies, but UV remap
+ * math leaves the hot path.
  * Always recreates the texture on rebuild — WebGPU left stale GPU resources
  * after quality-preset size changes.
  *

@@ -1,5 +1,5 @@
 // src/webgpu/cloudsMarchVariant.ts
-// Phase C: build-time march specialization (JS-omitted TSL, not runtime If/select).
+// Build-time march specialization (JS-omitted TSL, not runtime If/select).
 
 import type { TextureNode } from 'three/webgpu'
 

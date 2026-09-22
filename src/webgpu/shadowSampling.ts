@@ -105,71 +105,6 @@ export const getCascadeIndex = /*#__PURE__*/ FnLayout({
   }
 )
 
-export const getFadedCascadeIndex = /*#__PURE__*/ FnLayout({
-  name: 'getFadedCascadeIndex',
-  type: 'int',
-  inputs: [
-    { name: 'viewDepth', type: 'float' },
-    { name: 'near', type: 'float' },
-    { name: 'far', type: 'float' },
-    { name: 'jitter', type: 'float' },
-    { name: 'interval0', type: 'vec2' },
-    { name: 'interval1', type: 'vec2' },
-    { name: 'interval2', type: 'vec2' },
-    { name: 'interval3', type: 'vec2' },
-    { name: 'cascadeCount', type: 'int' }
-  ]
-})(
-  ([
-    viewDepth,
-    near,
-    far,
-    jitter,
-    interval0,
-    interval1,
-    interval2,
-    interval3,
-    cascadeCount
-  ]) => {
-    const depth = viewZToOrthographicDepth(viewDepth, near, far)
-    const nextIndex = int(-1).toVar()
-    const previousIndex = int(-1).toVar()
-    const alpha = float(0).toVar()
-    const intervals = [interval0, interval1, interval2, interval3]
-
-    for (let i = 0; i < intervals.length; ++i) {
-      const interval = intervals[i].toVar()
-      const isLast = i === intervals.length - 1
-      const center = interval.x.add(interval.y).mul(0.5)
-      const closestEdge = depth.lessThan(center).select(interval.x, interval.y)
-      const margin = closestEdge.mul(closestEdge).mul(0.5).toVar()
-      interval.assign(interval.add(margin.mul(vec2(-0.5, 0.5))))
-      const inInterval = isLast
-        ? depth.greaterThanEqual(interval.x)
-        : depth.greaterThanEqual(interval.x).and(depth.lessThan(interval.y))
-
-      If(cascadeCount.greaterThan(i).and(inInterval), () => {
-        previousIndex.assign(nextIndex)
-        nextIndex.assign(i)
-        alpha.assign(
-          isLast
-            ? depth.sub(interval.x).div(margin).saturate()
-            : min(depth.sub(interval.x), interval.y.sub(depth))
-                .div(margin)
-                .saturate()
-        )
-      })
-    }
-
-    return nextIndex
-      .lessThan(0)
-      .select(
-        nextIndex,
-        jitter.lessThanEqual(alpha).select(nextIndex, previousIndex)
-      )
-  }
-)
-
 export const readShadowOpticalDepth = /*#__PURE__*/ FnLayout({
   name: 'readShadowOpticalDepth',
   type: 'float',
@@ -445,12 +380,7 @@ export function setupShadowMarchColor(
                 positionMeters,
                 weatherUv,
                 march.mipLevel,
-                jitter,
-                {
-                  // Phase 5: honour shapeDetail/turbulence uniforms from presets.
-                  forceDisableShapeDetail: false,
-                  forceDisableTurbulence: false
-                }
+                jitter
               )
               If(
                 media.get('extinction').greaterThan(march.minExtinction),

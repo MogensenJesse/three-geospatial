@@ -38,7 +38,7 @@ import {
 } from 'three'
 
 import { FrustumCorners } from './helpers/FrustumCorners'
-import { type FrustumSplitMode, splitFrustum } from './helpers/splitFrustum'
+import { splitFrustum } from './helpers/splitFrustum'
 
 const vectorScratch1 = /*#__PURE__*/ new Vector3()
 const vectorScratch2 = /*#__PURE__*/ new Vector3()
@@ -61,32 +61,13 @@ export interface CascadedShadowMapsOptions {
   cascadeCount: number
   mapSize: Vector2
   maxFar?: number | null
-  farScale?: number
-  splitMode?: FrustumSplitMode
-  splitLambda?: number
-  margin?: number
-  fade?: boolean
 }
-
-export const cascadedShadowMapsDefaults = {
-  maxFar: null,
-  farScale: 1,
-  splitMode: 'practical',
-  splitLambda: 0.5,
-  margin: 0,
-  fade: true
-} satisfies Partial<CascadedShadowMapsOptions>
 
 export class CascadedShadowMaps {
   readonly cascades: Cascade[] = []
 
   readonly mapSize = new Vector2()
   maxFar: number | null
-  farScale: number
-  splitMode: FrustumSplitMode
-  splitLambda: number
-  margin: number
-  fade: boolean
 
   private readonly cameraFrustum = new FrustumCorners()
   private readonly frusta: FrustumCorners[] = []
@@ -94,27 +75,9 @@ export class CascadedShadowMaps {
   private _far = 0
 
   constructor(options: CascadedShadowMapsOptions) {
-    const {
-      cascadeCount,
-      mapSize,
-      maxFar,
-      farScale,
-      splitMode,
-      splitLambda,
-      margin,
-      fade
-    } = {
-      ...cascadedShadowMapsDefaults,
-      ...options
-    }
-    this.cascadeCount = cascadeCount
-    this.mapSize.copy(mapSize)
-    this.maxFar = maxFar
-    this.farScale = farScale
-    this.splitMode = splitMode
-    this.splitLambda = splitLambda
-    this.margin = margin
-    this.fade = fade
+    this.cascadeCount = options.cascadeCount
+    this.mapSize.copy(options.mapSize)
+    this.maxFar = options.maxFar ?? null
   }
 
   get cascadeCount(): number {
@@ -146,14 +109,7 @@ export class CascadedShadowMaps {
     const cascadeCount = this.cascadeCount
     const splits = this.splits
     const far = this.far
-    splitFrustum(
-      this.splitMode,
-      cascadeCount,
-      camera.near,
-      far,
-      this.splitLambda,
-      splits
-    )
+    splitFrustum('practical', cascadeCount, camera.near, far, 0.5, splits)
     this.cameraFrustum.setFromCamera(camera, far)
     this.cameraFrustum.split(splits, this.frusta)
 
@@ -177,13 +133,11 @@ export class CascadedShadowMaps {
       farCorners[0].distanceTo(nearCorners[2])
     )
 
-    // Expand the shadow bounds by the fade width.
-    if (this.fade) {
-      const near = camera.near
-      const far = this.far
-      const distance = farCorners[0].z / (far - near)
-      diagonalLength += 0.25 * distance ** 2 * (far - near)
-    }
+    // Fade width stays on. It was never turned off.
+    const near = camera.near
+    const far = this.far
+    const distance = farCorners[0].z / (far - near)
+    diagonalLength += 0.25 * distance ** 2 * (far - near)
     return diagonalLength * 0.5
   }
 
@@ -207,7 +161,6 @@ export class CascadedShadowMaps {
     if (frusta.length !== cascades.length) {
       throw new Error('Cascade frusta are out of sync with cascade metadata.')
     }
-    const margin = this.margin
     const mapSize = this.mapSize
 
     for (let i = 0; i < frusta.length; ++i) {
@@ -225,8 +178,8 @@ export class CascadedShadowMaps {
         right,
         top,
         bottom,
-        -this.margin, // near
-        radius * 2 + this.margin // far
+        0,
+        radius * 2
       )
 
       const { near, far } = frustumScratch
@@ -238,7 +191,7 @@ export class CascadedShadowMaps {
         bbox.expandByPoint(far[j])
       }
       const center = bbox.getCenter(vectorScratch1)
-      center.z = bbox.max.z + margin
+      center.z = bbox.max.z
 
       // Round light-space translation to even texel increments.
       const texelWidth = (right - left) / mapSize.width
@@ -264,9 +217,7 @@ export class CascadedShadowMaps {
     distance?: number
   ): void {
     this._far =
-      this.maxFar != null
-        ? Math.min(this.maxFar, camera.far * this.farScale)
-        : camera.far * this.farScale
+      this.maxFar != null ? Math.min(this.maxFar, camera.far) : camera.far
 
     this.updateIntervals(camera)
     this.updateMatrices(camera, sunDirection, distance)

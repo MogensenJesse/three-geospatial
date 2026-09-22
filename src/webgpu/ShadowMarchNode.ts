@@ -111,7 +111,7 @@ export class ShadowMarchNode extends TempNode {
   enabled = true
 
   private renderTargets: RenderTarget[] = []
-  /** Horizontal atlas of resolved cascades for cheap march sampling. */
+  /** Cascade array of resolved cascades for march sampling. */
   private readonly cascadeAtlas = new ShadowCascadeAtlas()
 
   /** CPU split for produce / resolve / atlas (ms). */
@@ -304,7 +304,7 @@ export class ShadowMarchNode extends TempNode {
     const { renderer } = frame
     this.sunDirectionWorld.copy(this.environment.sunDirection).normalize()
 
-    // Clear temporal history after discontinuous sun jumps (Phase 5).
+    // Clear temporal history after discontinuous sun jumps.
     if (
       Number.isNaN(this.previousSunDirection.x) ||
       this.previousSunDirection.distanceToSquared(this.sunDirectionWorld) > 1e-4
@@ -413,7 +413,3 @@ export class ShadowMarchNode extends TempNode {
     super.dispose()
   }
 }
-
-export const shadowMarch = (
-  ...args: ConstructorParameters<typeof ShadowMarchNode>
-): ShadowMarchNode => new ShadowMarchNode(...args)

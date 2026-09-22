@@ -31,13 +31,6 @@ export const viewMatrix = (camera: Camera): Node<'mat4'> =>
     reference('matrixWorldInverse', 'mat4', camera).setName('viewMatrix')
   )
 
-export const inverseProjectionMatrix = (camera: Camera): Node<'mat4'> =>
-  getCache(camera, 'inverseProjectionMatrix', () =>
-    reference('projectionMatrixInverse', 'mat4', camera).setName(
-      'inverseProjectionMatrix'
-    )
-  )
-
 export const inverseViewMatrix = (camera: Camera): Node<'mat4'> =>
   getCache(camera, 'inverseViewMatrix', () =>
     reference('matrixWorld', 'mat4', camera).setName('inverseViewMatrix')

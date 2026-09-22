@@ -5,16 +5,18 @@ import { uniform, uniformArray } from 'three/tsl'
 
 import { qualityPresets } from '../qualityPresets'
 
-/** Max cascades supported by the Phase C WebGPU spike (matches WebGL). */
+/** High-preset shadow defaults so a standalone node matches CloudsNode. */
+const highShadow = qualityPresets.high.shadow
+
+/** Max cascades supported by the shadow march (matches WebGL). */
 export const MAX_SHADOW_CASCADES = 4
 
 /** Uniforms shared by shadow march and clouds BSM sampling. */
 export class ShadowParameterNodes {
   readonly enabled = uniform(1).setName('shadowEnabled')
-  readonly cascadeCount = uniform(
-    qualityPresets.high.shadow.cascadeCount,
-    'int'
-  ).setName('shadowCascadeCount')
+  readonly cascadeCount = uniform(highShadow.cascadeCount, 'int').setName(
+    'shadowCascadeCount'
+  )
   readonly shadowFar = uniform(0).setName('shadowFar')
   readonly shadowCameraNear = uniform(1).setName('shadowCameraNear')
 
@@ -57,14 +59,25 @@ export class ShadowMarchParameters {
     'shadowMarchResolution'
   )
 
-  readonly maxIterationCount = uniform(50, 'int').setName(
-    'shadowMaxIterationCount'
+  readonly maxIterationCount = uniform(
+    highShadow.maxIterationCount,
+    'int'
+  ).setName('shadowMaxIterationCount')
+  readonly minStepSize = uniform(highShadow.minStepSize).setName(
+    'shadowMinStepSize'
   )
-  readonly minStepSize = uniform(100).setName('shadowMinStepSize')
-  readonly maxStepSize = uniform(1000).setName('shadowMaxStepSize')
-  readonly minDensity = uniform(1e-5).setName('shadowMinDensity')
-  readonly minExtinction = uniform(1e-5).setName('shadowMinExtinction')
-  readonly minTransmittance = uniform(1e-4).setName('shadowMinTransmittance')
+  readonly maxStepSize = uniform(highShadow.maxStepSize).setName(
+    'shadowMaxStepSize'
+  )
+  readonly minDensity = uniform(highShadow.minDensity).setName(
+    'shadowMinDensity'
+  )
+  readonly minExtinction = uniform(highShadow.minExtinction).setName(
+    'shadowMinExtinction'
+  )
+  readonly minTransmittance = uniform(highShadow.minTransmittance).setName(
+    'shadowMinTransmittance'
+  )
   readonly opticalDepthTailScale = uniform(2).setName('opticalDepthTailScale')
 
   /** Fixed mip bias for the active cascade (matches WebGL mipLevels[]). */

@@ -7,8 +7,7 @@ import {
   LinearFilter,
   NoBlending,
   RenderTarget,
-  RGBAFormat,
-  Vector2
+  RGBAFormat
 } from 'three'
 import {
   Fn,
@@ -73,12 +72,6 @@ const bayerPhaseNodes = /*#__PURE__*/ uniformArray(
   Array.from(bayerIndices),
   'int'
 ).setName('cloudsBayerIndices')
-
-export function getCloudsBayerPhase(x: number, y: number): number {
-  const column = ((x % 4) + 4) % 4
-  const row = ((y % 4) + 4) % 4
-  return bayerIndices[row * 4 + column]
-}
 
 const clipAABB = /*#__PURE__*/ FnVar(
   (
@@ -247,7 +240,7 @@ class CloudsResolveColorNode extends TempNode {
             historyReproj,
             owner.varianceGamma
           )
-          // Phase 1b: hard-cut ghosts. OOB -> current; fast UV motion -> lean to
+          // Hard-cut ghosts. OOB -> current; fast UV motion -> lean to
           // current (gamma=2 keeps soft stills). Prove Y with debugOutput=velocity.
           const speed = closest.g.abs().add(closest.b.abs())
           const motion = speed
@@ -279,7 +272,7 @@ class CloudsResolveColorNode extends TempNode {
           history,
           float(1)
         )
-        // Phase 1b: same motion hard-cut on full-res TAA path.
+        // Same motion hard-cut on the full-res TAA path.
         const speed = closest.g.abs().add(closest.b.abs())
         const motion = speed
           .smoothstep(float(0.002), float(0.014))
@@ -308,10 +301,7 @@ export class CloudsResolveNode extends TempNode {
   readonly velocityNode: TextureNode
   readonly frame = uniform(0, 'int').setName('cloudsResolveFrame')
   readonly temporalAlpha = uniform(0.1).setName('cloudsTemporalAlpha')
-  readonly varianceGamma = uniform(2).setName('cloudsVarianceGamma') // Phase 1a: match WebGL CloudsResolveMaterial
-  readonly texelSize = uniform(new Vector2(1, 1)).setName(
-    'cloudsResolveTexelSize'
-  )
+  readonly varianceGamma = uniform(2).setName('cloudsVarianceGamma')
   readonly temporalUpscaleNode = uniform(1).setName('cloudsTemporalUpscale')
   readonly historyValid = uniform(0).setName('cloudsHistoryValid')
 
@@ -388,7 +378,6 @@ export class CloudsResolveNode extends TempNode {
     if (w !== this.resolveTarget.width || h !== this.resolveTarget.height) {
       this.resolveTarget.setSize(w, h)
       this.historyTarget.setSize(w, h)
-      this.texelSize.value.set(1 / w, 1 / h)
       this.reset()
     }
     return this
@@ -457,7 +446,3 @@ export class CloudsResolveNode extends TempNode {
     super.dispose()
   }
 }
-
-export const cloudsResolve = (
-  ...args: ConstructorParameters<typeof CloudsResolveNode>
-): CloudsResolveNode => new CloudsResolveNode(...args)

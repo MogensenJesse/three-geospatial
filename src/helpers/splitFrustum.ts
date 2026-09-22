@@ -45,8 +45,6 @@ const modes: FrustumSplitFunctions = {
   }
 }
 
-export const frustumSplitFunctions = modes
-
 export function splitFrustum(
   mode: FrustumSplitMode,
   count: number,

@@ -1,7 +1,6 @@
 // src/webgpu/internal/node.ts
 
 import type { Node as ThreeNode } from 'three/webgpu'
-import { Node as ThreeNodeValue } from 'three/webgpu'
 
 export type NodeType =
   | 'float'
@@ -48,5 +47,3 @@ type MathNodeType =
  * union so procedural shader code typechecks under Three r186+.
  */
 export type Node<T extends NodeType = MathNodeType> = ThreeNode<T>
-
-export const Node = ThreeNodeValue

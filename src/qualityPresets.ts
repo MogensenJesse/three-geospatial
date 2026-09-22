@@ -24,7 +24,7 @@ export interface CloudMarchQuality {
   secondaryIterationCount: number
   minSecondaryStepSize: number
   secondaryStepScale: number
-  /** Ground-bounce march iterations (Phase 3). */
+  /** Ground-bounce march iterations. */
   groundIterationCount: number
   powderScale: number
   powderExponent: number
@@ -42,8 +42,6 @@ export interface CloudShadowQuality {
   minDensity: number
   minExtinction: number
   minTransmittance: number
-  shapeDetail: boolean
-  turbulence: boolean
   temporalAlpha: number
   temporalGamma: number
 }
@@ -86,14 +84,11 @@ const highShadow: CloudShadowQuality = {
   minDensity: 1e-5,
   minExtinction: 1e-5,
   minTransmittance: 1e-4,
-  shapeDetail: true,
-  turbulence: true,
   temporalAlpha: 0.01, // WebGL ShadowResolveMaterial default
   temporalGamma: 1
 }
 
-/** WebGL cloud-core reference (high preset) — parity plan Phase 0/1. */
-export const webglHighReference: CloudQualitySettings = {
+const high: CloudQualitySettings = {
   resolutionScale: 1,
   temporalUpscale: true,
   shapeDetail: true,
@@ -128,8 +123,6 @@ const low: CloudQualitySettings = {
     minDensity: 1e-4,
     minExtinction: 1e-4,
     minTransmittance: 1e-2,
-    shapeDetail: false,
-    turbulence: false,
     temporalAlpha: 0.01
   }
 }
@@ -150,16 +143,12 @@ const medium: CloudQualitySettings = {
     ...highShadow,
     mapSize: 256,
     minDensity: 1e-4,
-    minExtinction: 1e-4,
-    shapeDetail: true,
-    turbulence: false
+    minExtinction: 1e-4
   }
 }
 
-const high: CloudQualitySettings = webglHighReference
-
 const ultra: CloudQualitySettings = {
-  ...webglHighReference,
+  ...high,
   clouds: {
     ...highClouds,
     maxIterationCount: 768,
@@ -180,8 +169,8 @@ export const qualityPresets: Record<QualityPreset, CloudQualitySettings> = {
   ultra
 }
 
-/** Default / high reference — matches WebGL `defaults`. */
-export const defaults = webglHighReference
+/** Default quality. Same object as {@link qualityPresets.high}. */
+export const defaults = high
 
 /** Copy settings so consumers cannot mutate the shared preset objects. */
 export function cloneQualitySettings(

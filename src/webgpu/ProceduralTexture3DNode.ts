@@ -46,7 +46,7 @@ export abstract class ProceduralTexture3DNode extends TempNode {
     this.setSize(size.x, size.y, size.z)
   }
 
-  protected createStorage3DTexture(name?: string): Storage3DTexture {
+  protected createStorage3DTexture(): Storage3DTexture {
     const texture = new Storage3DTexture(1, 1, 1)
     texture.type = UnsignedByteType
     texture.minFilter = LinearFilter
@@ -56,9 +56,7 @@ export abstract class ProceduralTexture3DNode extends TempNode {
     texture.wrapR = RepeatWrapping
     texture.colorSpace = NoColorSpace
     texture.generateMipmaps = false
-
-    const typeName = (this.constructor as typeof Node).type
-    texture.name = name != null ? `${typeName}.${name}` : typeName
+    texture.name = (this.constructor as typeof Node).type
 
     return texture
   }
@@ -79,10 +77,7 @@ export abstract class ProceduralTexture3DNode extends TempNode {
     return this
   }
 
-  protected abstract setupOutputNode(
-    uvw: Node<'vec3'>,
-    builder: NodeBuilder
-  ): Node
+  protected abstract setupOutputNode(uvw: Node<'vec3'>): Node
 
   override setup(builder: NodeBuilder): ThreeNode | null | undefined {
     const { width, height, depth } = this.texture
@@ -107,11 +102,7 @@ export abstract class ProceduralTexture3DNode extends TempNode {
         // point = vec3(vUv.xy, (layer + 0.5) / size).
         const uvw = textureCoordinate.add(0.5).div(vec3(width, height, depth))
 
-        textureStore(
-          this.texture,
-          textureCoordinate,
-          this.setupOutputNode(uvw, builder)
-        )
+        textureStore(this.texture, textureCoordinate, this.setupOutputNode(uvw))
       })().compute(width * height * depth, [4, 4, 4])
 
       void builder.renderer.compute(computeNode)
