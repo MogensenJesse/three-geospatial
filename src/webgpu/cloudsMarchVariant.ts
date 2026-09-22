@@ -13,8 +13,6 @@ export interface CloudsMarchVariant {
   groundBounce: boolean
   powder: boolean
   phaseAccurate: boolean
-  /** -1 = omit optical-depth debug probes from the graph. */
-  debugOpticalDepth: number
   /** Exact MS loop trip count (replaces Loop(8)+Break). */
   multiScatteringOctaves: number
 }
@@ -33,7 +31,6 @@ export function resolveCloudsMarchVariant(
       )
     )
   )
-  const debug = Number(march.shadowDebugOpticalDepth.value)
   return {
     shadows: shadowAtlas != null,
     localSun: Number(march.maxIterationCountToSun.value) > 0,
@@ -42,7 +39,6 @@ export function resolveCloudsMarchVariant(
       Number(march.maxIterationCountToGround.value) > 0,
     powder: Number(march.powderScale.value) > 0,
     phaseAccurate: Number(march.phaseFunctionMode.value) === 1,
-    debugOpticalDepth: Number.isFinite(debug) ? debug : -1,
     multiScatteringOctaves: octaves
   }
 }
@@ -55,7 +51,6 @@ export function cloudsMarchVariantKey(v: CloudsMarchVariant): string {
     v.groundBounce ? 'g1' : 'g0',
     v.powder ? 'p1' : 'p0',
     v.phaseAccurate ? 'ph1' : 'ph0',
-    `d${v.debugOpticalDepth}`,
     `o${v.multiScatteringOctaves}`
   ].join('_')
 }

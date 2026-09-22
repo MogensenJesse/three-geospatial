@@ -207,33 +207,21 @@ const drainePhase = /*#__PURE__*/ FnLayout({
     )
 })
 
-const phaseFunction = /*#__PURE__*/ FnLayout({
-  name: 'cloudsPhaseFunction',
-  type: 'float',
-  inputs: [
-    { name: 'cosTheta', type: 'float' },
-    { name: 'attenuation', type: 'float' },
-    { name: 'g1', type: 'float' },
-    { name: 'g2', type: 'float' },
-    { name: 'mixWeight', type: 'float' },
-    { name: 'phaseMode', type: 'int' }
-  ]
-})(([cosTheta, attenuation, g1, g2, mixWeight, phaseMode]) => {
-  // Accurate fit for large particles (d=10): NVIDIA approximate Mie.
+/** Accurate fit for large particles (d=10): NVIDIA approximate Mie. */
+const phaseAccurate = (
+  cosTheta: Node<'float'>,
+  attenuation: Node<'float'>
+): Node<'float'> => {
   const gHG = float(0.988176691700256)
   const gD = float(0.5556712547839497)
   const alpha = float(21.995520856274638)
   const accurateWeight = float(0.4819554318404214)
-  const accurate = mix(
+  return mix(
     henyeyGreenstein(vec2(gHG).mul(attenuation), cosTheta).x,
     drainePhase(cosTheta, gD.mul(attenuation), alpha),
     accurateWeight
   )
-  const g = vec2(g1, g2).mul(attenuation)
-  const weights = vec2(float(1).sub(mixWeight), mixWeight)
-  const approximate = henyeyGreenstein(g, cosTheta).dot(weights)
-  return phaseMode.equal(1).select(accurate, approximate)
-})
+}
 
 /** Phase / MS specialized at build time via {@link CloudsMarchVariant}. */
 const phaseApproximate = (
@@ -257,7 +245,7 @@ const phaseForVariant = (
   variant: CloudsMarchVariant
 ): Node<'float'> => {
   if (variant.phaseAccurate) {
-    return phaseFunction(cosTheta, attenuation, g1, g2, mixWeight, int(1))
+    return phaseAccurate(cosTheta, attenuation)
   }
   return phaseApproximate(cosTheta, attenuation, g1, g2, mixWeight)
 }
@@ -576,27 +564,27 @@ export function setupCloudsMarch(
                         sunRayDistance,
                         jitter
                       )
-                      if (variant.debugOpticalDepth >= 0) {
-                        bsmOpticalDepth.assign(
-                          march.shadowDebugOpticalDepth
-                            .greaterThanEqual(0)
-                            .select(march.shadowDebugOpticalDepth, sampled)
-                        )
-                      } else {
+                      If(
+                        march.shadowDebugOpticalDepth.greaterThanEqual(0),
+                        () => {
+                          bsmOpticalDepth.assign(march.shadowDebugOpticalDepth)
+                        }
+                      ).Else(() => {
                         bsmOpticalDepth.assign(sampled)
-                      }
+                      })
                     })
                   }
 
                   const opticalDepth = localOpticalDepth
                     .add(bsmOpticalDepth)
                     .toVar()
-                  // Optical-depth debug probes only in debug variants.
-                  if (variant.debugOpticalDepth === -3) {
+                  If(march.shadowDebugOpticalDepth.equal(-3), () => {
                     opticalDepth.assign(localOpticalDepth)
-                  } else if (variant.debugOpticalDepth === -4) {
-                    opticalDepth.assign(bsmOpticalDepth)
-                  }
+                  }).Else(() => {
+                    If(march.shadowDebugOpticalDepth.equal(-4), () => {
+                      opticalDepth.assign(bsmOpticalDepth)
+                    })
+                  })
 
                   const direct = environment.sunIrradianceNode.mul(
                     approximateMultipleScattering(
@@ -658,7 +646,7 @@ export function setupCloudsMarch(
                       .mul(march.skyLightScale)
                   )
 
-                  if (variant.debugOpticalDepth === -5) {
+                  If(march.shadowDebugOpticalDepth.equal(-5), () => {
                     radiance.assign(
                       environment.sunIrradianceNode.mul(
                         approximateMultipleScattering(
@@ -671,7 +659,7 @@ export function setupCloudsMarch(
                         )
                       )
                     )
-                  }
+                  })
                   radiance.mulAssign(media.get('scattering'))
 
                   // Powder omitted when scale is 0.

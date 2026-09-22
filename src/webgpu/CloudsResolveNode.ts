@@ -38,6 +38,7 @@ import {
 } from 'three/webgpu'
 
 import { bayerIndices } from '../bayer'
+import { computeCloudsSizes } from './cloudsSizes'
 import type { Node } from './internal/node'
 import { outputTexture } from './internal/OutputTextureNode'
 import {
@@ -290,11 +291,18 @@ export class CloudsResolveNode extends TempNode {
   }
 
   setSize(width: number, height: number): this {
-    const w = Math.max(Math.round(width), 1)
-    const h = Math.max(Math.round(height), 1)
-    if (w !== this.resolveTarget.width || h !== this.resolveTarget.height) {
-      this.resolveTarget.setSize(w, h)
-      this.historyTarget.setSize(w, h)
+    const { outputWidth, outputHeight } = computeCloudsSizes(
+      width,
+      height,
+      1,
+      false
+    )
+    if (
+      outputWidth !== this.resolveTarget.width ||
+      outputHeight !== this.resolveTarget.height
+    ) {
+      this.resolveTarget.setSize(outputWidth, outputHeight)
+      this.historyTarget.setSize(outputWidth, outputHeight)
       this.reset()
     }
     return this

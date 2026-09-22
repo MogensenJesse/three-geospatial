@@ -33,6 +33,7 @@ import {
   cloudsMarchVariantKey,
   resolveCloudsMarchVariant
 } from './cloudsMarchVariant'
+import { computeCloudsSizes } from './cloudsSizes'
 import { outputTexture } from './internal/OutputTextureNode'
 import { CloudsMarchParameters, setupCloudsMarch } from './march'
 import type {
@@ -214,23 +215,27 @@ export class CloudsMarchNode extends TempNode {
   }
 
   setSize(width: number, height: number): this {
-    const outputWidth = Math.max(Math.round(width * this.resolutionScale), 1)
-    const outputHeight = Math.max(Math.round(height * this.resolutionScale), 1)
-    const w = this.temporalUpscale ? Math.ceil(outputWidth / 4) : outputWidth
-    const h = this.temporalUpscale ? Math.ceil(outputHeight / 4) : outputHeight
-    const logicalWidth = this.temporalUpscale ? w * 4 : w
-    const logicalHeight = this.temporalUpscale ? h * 4 : h
+    const sizes = computeCloudsSizes(
+      width,
+      height,
+      this.resolutionScale,
+      this.temporalUpscale
+    )
     const outputSizeChanged =
-      this.outputSize.x !== outputWidth || this.outputSize.y !== outputHeight
+      this.outputSize.x !== sizes.outputWidth ||
+      this.outputSize.y !== sizes.outputHeight
 
-    if (this.renderTarget.width !== w || this.renderTarget.height !== h) {
-      this.renderTarget.setSize(w, h)
+    if (
+      this.renderTarget.width !== sizes.marchWidth ||
+      this.renderTarget.height !== sizes.marchHeight
+    ) {
+      this.renderTarget.setSize(sizes.marchWidth, sizes.marchHeight)
     }
-    this.outputSize.set(outputWidth, outputHeight)
-    this.march.resolution.value.set(logicalWidth, logicalHeight)
+    this.outputSize.set(sizes.outputWidth, sizes.outputHeight)
+    this.march.resolution.value.set(sizes.logicalWidth, sizes.logicalHeight)
     this.march.targetUvScale.value.set(
-      logicalWidth / outputWidth,
-      logicalHeight / outputHeight
+      sizes.logicalWidth / sizes.outputWidth,
+      sizes.logicalHeight / sizes.outputHeight
     )
     if (outputSizeChanged) {
       this.resetReprojection()

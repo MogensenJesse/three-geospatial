@@ -10,52 +10,78 @@ import {
   type CloudsEnvironmentOptions
 } from './CloudsEnvironment'
 
+/** Marker so facade field types can live on one object and stay optional. */
+type Opt<T> = { readonly __opt: T }
+
+function opt<T>(): Opt<T> {
+  return undefined as unknown as Opt<T>
+}
+
+/**
+ * Single source for facade fields. {@link CloudsFacadeOptions} and the
+ * environment-vs-facade split both read this object.
+ */
+export const cloudsFacadeFields = {
+  environment: opt<CloudsEnvironment | CloudsEnvironmentOptions>(),
+  qualityPreset: opt<QualityPreset>(),
+  cloudLayers: opt<CloudLayers | readonly CloudLayerLike[]>(),
+  localWeatherTexture: opt<TextureNode | null>(),
+  shapeTexture: opt<Texture3DNode | null>(),
+  shapeDetailTexture: opt<Texture3DNode | null>(),
+  turbulenceTexture: opt<TextureNode | null>(),
+  stbnTexture: opt<Texture3DNode | null>(),
+  coverage: opt<number>(),
+  scatteringCoefficient: opt<number>(),
+  absorptionCoefficient: opt<number>(),
+  turbulenceDisplacement: opt<number>(),
+  shapeDetail: opt<boolean>(),
+  turbulence: opt<boolean>(),
+  resolutionScale: opt<number>(),
+  temporalUpscale: opt<boolean>(),
+  temporalAlpha: opt<number>(),
+  temporalHistoryEnabled: opt<boolean>(),
+  varianceGamma: opt<number>(),
+  secondaryIterationCount: opt<number>(),
+  skyLightScale: opt<number>(),
+  stepJitterScale: opt<number>(),
+  powderScale: opt<number>(),
+  powderExponent: opt<number>(),
+  groundBounceScale: opt<number>(),
+  groundIterationCount: opt<number>(),
+  phaseFunctionMode: opt<PhaseFunctionMode>(),
+  scatterAnisotropy1: opt<number>(),
+  scatterAnisotropy2: opt<number>(),
+  scatterAnisotropyMix: opt<number>(),
+  shadowEnabled: opt<boolean>(),
+  shadowMapSize: opt<number>(),
+  shadowCascadeCount: opt<number>(),
+  shadowFilterRadius: opt<number>(),
+  shadowTemporalAlpha: opt<number>(),
+  shadowTemporalGamma: opt<number>(),
+  opticalDepthTailScale: opt<number>(),
+  localWeatherRepeat: opt<Vector2>(),
+  localWeatherOffset: opt<Vector2>(),
+  shapeRepeat: opt<Vector3>(),
+  shapeOffset: opt<Vector3>(),
+  shapeDetailRepeat: opt<Vector3>(),
+  shapeDetailOffset: opt<Vector3>(),
+  turbulenceRepeat: opt<Vector2>(),
+  localWeatherVelocity: opt<Vector2>(),
+  shapeVelocity: opt<Vector3>(),
+  shapeDetailVelocity: opt<Vector3>()
+}
+
+type Unwrap<T> = T extends Opt<infer U> ? U : never
+
 /**
  * Optional facade knobs for {@link clouds} / {@link CloudsNode}.
  * Environment may be passed as {@link environment} or inlined as
  * {@link CloudsEnvironmentOptions} fields on the same object.
  */
-export interface CloudsFacadeOptions {
-  environment?: CloudsEnvironment | CloudsEnvironmentOptions
-  qualityPreset?: QualityPreset
-  cloudLayers?: CloudLayers | readonly CloudLayerLike[]
-  localWeatherTexture?: TextureNode | null
-  shapeTexture?: Texture3DNode | null
-  shapeDetailTexture?: Texture3DNode | null
-  turbulenceTexture?: TextureNode | null
-  stbnTexture?: Texture3DNode | null
-  coverage?: number
-  scatteringCoefficient?: number
-  absorptionCoefficient?: number
-  turbulenceDisplacement?: number
-  shapeDetail?: boolean
-  turbulence?: boolean
-  resolutionScale?: number
-  temporalUpscale?: boolean
-  temporalAlpha?: number
-  varianceGamma?: number
-  secondaryIterationCount?: number
-  powderScale?: number
-  powderExponent?: number
-  groundBounceScale?: number
-  groundIterationCount?: number
-  phaseFunctionMode?: PhaseFunctionMode
-  shadowEnabled?: boolean
-  shadowMapSize?: number
-  shadowCascadeCount?: number
-  shadowFilterRadius?: number
-  shadowTemporalAlpha?: number
-  shadowTemporalGamma?: number
-  localWeatherRepeat?: Vector2
-  localWeatherOffset?: Vector2
-  shapeRepeat?: Vector3
-  shapeOffset?: Vector3
-  shapeDetailRepeat?: Vector3
-  shapeDetailOffset?: Vector3
-  turbulenceRepeat?: Vector2
-  localWeatherVelocity?: Vector2
-  shapeVelocity?: Vector3
-  shapeDetailVelocity?: Vector3
+export type CloudsFacadeOptions = {
+  [K in keyof typeof cloudsFacadeFields]?: Unwrap<
+    (typeof cloudsFacadeFields)[K]
+  >
 }
 
 /** Construction options for {@link clouds}. Legacy env-only args still work. */
@@ -64,48 +90,9 @@ export type CloudsOptions =
   | CloudsEnvironmentOptions
   | (CloudsFacadeOptions & Partial<CloudsEnvironmentOptions>)
 
-const FACADE_KEYS = new Set<string>([
-  'environment',
-  'qualityPreset',
-  'cloudLayers',
-  'localWeatherTexture',
-  'shapeTexture',
-  'shapeDetailTexture',
-  'turbulenceTexture',
-  'stbnTexture',
-  'coverage',
-  'scatteringCoefficient',
-  'absorptionCoefficient',
-  'turbulenceDisplacement',
-  'shapeDetail',
-  'turbulence',
-  'resolutionScale',
-  'temporalUpscale',
-  'temporalAlpha',
-  'varianceGamma',
-  'secondaryIterationCount',
-  'powderScale',
-  'powderExponent',
-  'groundBounceScale',
-  'groundIterationCount',
-  'phaseFunctionMode',
-  'shadowEnabled',
-  'shadowMapSize',
-  'shadowCascadeCount',
-  'shadowFilterRadius',
-  'shadowTemporalAlpha',
-  'shadowTemporalGamma',
-  'localWeatherRepeat',
-  'localWeatherOffset',
-  'shapeRepeat',
-  'shapeOffset',
-  'shapeDetailRepeat',
-  'shapeDetailOffset',
-  'turbulenceRepeat',
-  'localWeatherVelocity',
-  'shapeVelocity',
-  'shapeDetailVelocity'
-])
+const FACADE_KEYS = Object.keys(cloudsFacadeFields) as Array<
+  keyof CloudsFacadeOptions
+>
 
 export interface ResolvedCloudsOptions {
   environment: CloudsEnvironment

@@ -2,7 +2,8 @@
 
 import {
   type CloudQualitySettings,
-  cloneQualitySettings
+  cloneQualitySettings,
+  type PhaseFunctionMode
 } from '../qualityPresets'
 import type { CloudsMarchNode } from './CloudsMarchNode'
 import type { CloudParameterNodes } from './parameters'
@@ -15,12 +16,24 @@ export interface CloudsQualityHost {
   shadowNode: ShadowMarchNode
   resolutionScale: number
   temporalUpscale: boolean
+  shapeDetailEnabled: boolean
+  turbulenceEnabled: boolean
+  secondaryIterationCount: number
+  powderScale: number
+  powderExponent: number
+  groundBounceScale: number
+  groundIterationCount: number
+  phaseFunctionMode: PhaseFunctionMode
+  shadowMapSize: number
+  shadowCascadeCount: number
+  shadowTemporalAlpha: number
+  shadowTemporalGamma: number
   resetTemporalHistory(): unknown
 }
 
 /**
- * Push {@link CloudQualitySettings} onto march and shadow nodes and rebind
- * the BSM cascade array.
+ * Push {@link CloudQualitySettings} through the host setters, then the march
+ * and shadow uniforms that have no facade setter.
  */
 export function applyCloudsQualitySettings(
   host: CloudsQualityHost,
@@ -31,8 +44,18 @@ export function applyCloudsQualitySettings(
 
   host.resolutionScale = next.resolutionScale
   host.temporalUpscale = next.temporalUpscale
-  host.parameters.shapeDetailEnabled.value = next.shapeDetail
-  host.parameters.turbulenceEnabled.value = next.turbulence
+  host.shapeDetailEnabled = next.shapeDetail
+  host.turbulenceEnabled = next.turbulence
+  host.secondaryIterationCount = cloudQuality.secondaryIterationCount
+  host.powderScale = cloudQuality.powderScale
+  host.powderExponent = cloudQuality.powderExponent
+  host.groundBounceScale = cloudQuality.groundBounceScale
+  host.groundIterationCount = cloudQuality.groundIterationCount
+  host.phaseFunctionMode = cloudQuality.phaseFunctionMode
+  host.shadowMapSize = shadowQuality.mapSize
+  host.shadowCascadeCount = shadowQuality.cascadeCount
+  host.shadowTemporalAlpha = shadowQuality.temporalAlpha
+  host.shadowTemporalGamma = shadowQuality.temporalGamma
 
   const march = host.marchNode.march
   march.multiScatteringOctaves.value = cloudQuality.multiScatteringOctaves
@@ -44,15 +67,8 @@ export function applyCloudsQualitySettings(
   march.minDensity.value = cloudQuality.minDensity
   march.minExtinction.value = cloudQuality.minExtinction
   march.minTransmittance.value = cloudQuality.minTransmittance
-  march.maxIterationCountToSun.value = cloudQuality.secondaryIterationCount
   march.minSecondaryStepSize.value = cloudQuality.minSecondaryStepSize
   march.secondaryStepScale.value = cloudQuality.secondaryStepScale
-  march.powderScale.value = cloudQuality.powderScale
-  march.powderExponent.value = cloudQuality.powderExponent
-  march.groundBounceScale.value = cloudQuality.groundBounceScale
-  march.maxIterationCountToGround.value = cloudQuality.groundIterationCount
-  march.phaseFunctionMode.value =
-    cloudQuality.phaseFunctionMode === 'accurate' ? 1 : 0
 
   const shadowMarch = host.shadowNode.march
   shadowMarch.maxIterationCount.value = shadowQuality.maxIterationCount
@@ -61,13 +77,4 @@ export function applyCloudsQualitySettings(
   shadowMarch.minDensity.value = shadowQuality.minDensity
   shadowMarch.minExtinction.value = shadowQuality.minExtinction
   shadowMarch.minTransmittance.value = shadowQuality.minTransmittance
-
-  host.shadowNode.setMapSize(shadowQuality.mapSize)
-  host.shadowNode.setCascadeCount(shadowQuality.cascadeCount)
-  host.shadowNode.resolveNode.temporalAlpha.value = shadowQuality.temporalAlpha
-  host.shadowNode.resolveNode.varianceGamma.value = shadowQuality.temporalGamma
-
-  // Cascade array recreates on map/cascade change; rebind so sampling never keeps a
-  // disposed GPU texture after preset switches.
-  host.shadowNode.rebindConsumers(host)
 }
