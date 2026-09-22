@@ -81,8 +81,8 @@ const upscaleVarianceOffsets: Array<readonly [number, number]> = [
   [1, 1]
 ]
 
-/** Full-res pixels. w = 1 on this frame's Bayer sample, ~0.36 one pixel away. */
-const TEMPORAL_UPSCALE_SIGMA = 0.7
+/** Full-res pixels. w = 1 on this frame's Bayer sample, ~0.19 one pixel away. */
+const TEMPORAL_UPSCALE_SIGMA = 0.55
 /** Still pixels use varianceGamma * this, so a noisy low-res box does not clip history. */
 const TEMPORAL_UPSCALE_STATIC_GAMMA = 2
 
@@ -237,7 +237,7 @@ export class CloudsResolveNode extends TempNode {
    * TAAU blend toward the fresh reconstruction, scaled by distance to this
    * frame's Bayer sample. 1 replaces the phase pixel outright.
    */
-  readonly temporalUpscaleAlpha = uniform(0.2).setName(
+  readonly temporalUpscaleAlpha = uniform(0.22).setName(
     'cloudsTemporalUpscaleAlpha'
   )
   readonly varianceGamma = uniform(2).setName('cloudsVarianceGamma')
