@@ -34,24 +34,16 @@ import {
   type CloudsDebugOutput,
   cloudShadow,
   clouds,
-  compositeClouds,
-  type QualityPreset
+  compositeClouds
 } from '../src'
 import { bindCloudControls } from './bindCloudControls'
+import { demoArt } from './demoArt'
 import { requireElement, showError } from './dom'
-import {
-  artDirectedSky,
-  artDirectedSun,
-  type IrradianceMode,
-  irradianceModeFromLocation,
-  preethamBakeIrradiance
-} from './irradianceModes'
 import {
   accumulatePassTiming,
   createPassTimingEma,
   formatPassStats
 } from './passStats'
-import { captureWgslModules, downloadWgslCapture } from './wgslCapture'
 import './styles.css'
 
 interface DemoRenderPipeline {
@@ -134,8 +126,16 @@ async function main(): Promise<void> {
     requireElement<HTMLInputElement>('temporal-history')
   const stbnJitterFreezeInput =
     requireElement<HTMLInputElement>('stbn-jitter-freeze')
-  const passStats = requireElement<HTMLElement>('pass-stats')
-  const passTimingEma = createPassTimingEma()
+  const showPassStats = new URLSearchParams(location.search).has('stats')
+  const passStats = showPassStats ? document.createElement('p') : null
+  if (passStats != null) {
+    passStats.id = 'pass-stats'
+    passStats.className = 'status'
+    passStats.setAttribute('aria-live', 'polite')
+    passStats.textContent = 'Pass sizes: —'
+    requireElement<HTMLElement>('diagnostics').append(passStats)
+  }
+  const passTimingEma = showPassStats ? createPassTimingEma() : null
   const sunDetailInput = requireElement<HTMLInputElement>('sun-detail')
   const sunDetailOutput = requireElement<HTMLOutputElement>('sun-detail-value')
   const marchIterationsInput =
@@ -151,10 +151,13 @@ async function main(): Promise<void> {
   const powderScaleOutput =
     requireElement<HTMLOutputElement>('powder-scale-value')
   const skyLightScaleInput = requireElement<HTMLInputElement>('sky-light-scale')
+  skyLightScaleInput.value = String(demoArt.skyLightScale)
   const skyLightScaleOutput = requireElement<HTMLOutputElement>(
     'sky-light-scale-value'
   )
+  skyLightScaleOutput.value = demoArt.skyLightScale.toFixed(2)
   const skyIntensityInput = requireElement<HTMLInputElement>('sky-intensity')
+  skyIntensityInput.value = String(demoArt.skyIntensity)
   const skyIntensityOutput = requireElement<HTMLOutputElement>(
     'sky-intensity-value'
   )
@@ -164,25 +167,16 @@ async function main(): Promise<void> {
   )
   const phaseFunctionInput = requireElement<HTMLSelectElement>('phase-function')
   const sunInput = requireElement<HTMLInputElement>('sun-elevation')
-  const irradianceModeInput =
-    requireElement<HTMLSelectElement>('irradiance-mode')
-  let irradianceMode: IrradianceMode = irradianceModeFromLocation()
-  if (irradianceMode === 'takram') {
-    console.warn(
-      '[demo] irradiance=takram blocked (no atmosphere in standalone demo). Using preethamBake (keep Preetham sky; no takram atmosphere).'
-    )
-    irradianceMode = 'preethamBake'
-  }
-  irradianceModeInput.value = irradianceMode
   const sunOutput = requireElement<HTMLOutputElement>('sun-value')
   const exposureInput = requireElement<HTMLInputElement>('exposure')
+  exposureInput.value = String(demoArt.exposure)
   const exposureOutput = requireElement<HTMLOutputElement>('exposure-value')
 
   const renderer = new WebGPURenderer({ antialias: true, trackTimestamp: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.toneMapping = AgXToneMapping
-  renderer.toneMappingExposure = Number(exposureInput.value)
+  renderer.toneMappingExposure = demoArt.exposure
   renderer.domElement.setAttribute('aria-label', 'Volumetric cloud scene')
   app.append(renderer.domElement)
   await renderer.init()
@@ -273,6 +267,7 @@ async function main(): Promise<void> {
     sunIrradiance: new Vector3(),
     skyIrradiance: new Vector3()
   })
+  cloudNode.skyLightScale = demoArt.skyLightScale
   cloudNode.coverage = Number(coverageInput.value)
   const stbnTexture = await loadStbnTexture('/textures/stbn.bin')
   cloudNode.setStbnTexture(texture3D(stbnTexture))
@@ -316,9 +311,9 @@ async function main(): Promise<void> {
 
   let gpuRenderMs = 0
   let gpuResolveInFlight = false
-  const dumpWgslButton = requireElement<HTMLButtonElement>('dump-wgsl')
 
   const updatePassStats = (): void => {
+    if (passStats == null || passTimingEma == null) return
     const diag = cloudNode.getPassDiagnostics(marchRenderSize, marchOutputSize)
     renderer.getDrawingBufferSize(drawingBufferSize)
     accumulatePassTiming(passTimingEma, diag.timing, gpuRenderMs)
@@ -339,66 +334,6 @@ async function main(): Promise<void> {
     )
   }
 
-  dumpWgslButton.addEventListener('click', () => {
-    void (async () => {
-      const backend = renderer.backend as { device?: GPUDevice }
-      const device = backend.device
-      if (device == null) {
-        status.textContent = 'WGSL dump: no GPU device yet'
-        return
-      }
-      dumpWgslButton.disabled = true
-      const prevShadows = cloudNode.shadowEnabled
-      const marchMaterial = (
-        cloudNode.marchNode as unknown as {
-          material: { customProgramCacheKey: () => string }
-        }
-      ).material
-      const baseKey = marchMaterial.customProgramCacheKey.bind(marchMaterial)
-
-      const captureVariant = async (
-        shadowsOn: boolean,
-        label: string
-      ): Promise<number> => {
-        cloudNode.shadowEnabled = shadowsOn
-        const nonce = 'dump-' + label + '-' + String(Date.now())
-        marchMaterial.customProgramCacheKey = () => baseKey() + '|' + nonce
-        cloudNode.marchNode.invalidateMaterial(true)
-        status.textContent = 'Capturing WGSL (' + label + ')…'
-        const result = await captureWgslModules(device, {
-          recompile: () => {
-            cloudNode.marchNode.invalidateMaterial(true)
-          },
-          render: () => {
-            renderPipeline.render()
-          },
-          frames: 6
-        })
-        downloadWgslCapture(result, label)
-        return result.modules.length
-      }
-
-      try {
-        const onCount = await captureVariant(true, 'shadows-on')
-        const offCount = await captureVariant(false, 'shadows-off')
-        status.textContent =
-          'WGSL dump: shadows-on ' +
-          String(onCount) +
-          ' + shadows-off ' +
-          String(offCount) +
-          ' modules (downloads + console.table)'
-      } catch (err) {
-        console.error(err)
-        status.textContent = 'WGSL dump failed (see console)'
-      } finally {
-        marchMaterial.customProgramCacheKey = baseKey
-        cloudNode.shadowEnabled = prevShadows
-        cloudNode.marchNode.invalidateMaterial(true)
-        dumpWgslButton.disabled = false
-      }
-    })()
-  })
-
   const cloudControls = bindCloudControls({
     animateWeatherInput,
     cloudNode,
@@ -412,8 +347,6 @@ async function main(): Promise<void> {
     groundBounceOutput,
     groundMaterial,
     hemisphere,
-    irradianceMode,
-    irradianceModeInput,
     landmarkMaterial,
     layerControls,
     marchIterationsInput,
@@ -468,7 +401,7 @@ async function main(): Promise<void> {
     stats.begin()
     controls.update()
     renderPipeline.render()
-    if (!gpuResolveInFlight) {
+    if (showPassStats && !gpuResolveInFlight) {
       gpuResolveInFlight = true
       void renderer
         .resolveTimestampsAsync(TimestampQuery.RENDER)
@@ -484,11 +417,11 @@ async function main(): Promise<void> {
           gpuResolveInFlight = false
         })
     }
-    updatePassStats()
+    if (showPassStats) updatePassStats()
     stats.end()
   })
   status.textContent = 'WebGPU active'
-  updatePassStats()
+  if (showPassStats) updatePassStats()
 
   window.addEventListener(
     'beforeunload',

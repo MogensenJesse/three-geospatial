@@ -247,55 +247,42 @@
         </label>
 
         <label>
-          <span>Exposure <output id="exposure-value">1.25</output></span>
+          <span>Exposure <output id="exposure-value"></output></span>
           <input
             id="exposure"
             type="range"
             min="0.1"
             max="10"
             step="0.05"
-            value="1.25"
           />
         </label>
 
         <label>
-          <span>Sky light scale <output id="sky-light-scale-value">3.00</output></span>
+          <span>Sky light scale <output id="sky-light-scale-value"></output></span>
           <input
             id="sky-light-scale"
             type="range"
             min="0.5"
             max="5"
             step="0.05"
-            value="3"
           />
         </label>
 
         <label>
-          <span>Sky intensity <output id="sky-intensity-value">6.00</output></span>
+          <span>Sky intensity <output id="sky-intensity-value"></output></span>
           <input
             id="sky-intensity"
             type="range"
             min="0.25"
             max="6"
             step="0.05"
-            value="6"
-            title="Art-directed: scales sky RGB from 0.15 baseline. Preetham bake: multiplies baked outSky."
+            title="Multiplies the Preetham-baked sky irradiance."
           />
         </label>
       </section>
 
       <details class="control-group" id="diagnostics" open>
         <summary id="diagnostics-heading">Diagnostics</summary>
-
-        <label>
-          <span>Irradiance mode</span>
-          <select id="irradiance-mode">
-            <option value="artDirected">Art-directed</option>
-            <option value="preethamBake" selected>Preetham bake</option>
-            <option value="takram" disabled>Takram (needs atmosphere dep)</option>
-          </select>
-        </label>
-
 
         <label>
           <span>Debug output</span>
@@ -326,10 +313,6 @@
           />
         </label>
 
-        <button type="button" id="dump-wgsl">Dump WGSL</button>
-        <p id="pass-stats" class="status" aria-live="polite">
-          Pass sizes: —
-        </p>
       </details>
 
       <p class="hint">Drag to orbit · Scroll to zoom</p>

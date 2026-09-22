@@ -1,14 +1,8 @@
 // demo/bindCloudControls.ts
 
-import { MathUtils } from 'three/webgpu'
+import { MathUtils, Vector3 } from 'three/webgpu'
 
-import type { CloudsDebugOutput, QualityPreset } from '../src'
-import {
-  artDirectedSky,
-  artDirectedSun,
-  type IrradianceMode,
-  preethamBakeIrradiance
-} from './irradianceModes'
+import type { QualityPreset } from '../src'
 
 export interface CloudControlsDeps {
   animateWeatherInput: any
@@ -23,8 +17,6 @@ export interface CloudControlsDeps {
   groundBounceOutput: HTMLOutputElement
   groundMaterial: any
   hemisphere: any
-  irradianceMode: any
-  irradianceModeInput: any
   landmarkMaterial: any
   layerControls: any
   marchIterationsInput: any
@@ -60,6 +52,31 @@ export interface CloudControlsDeps {
   updateTemporalHistory: any
 }
 
+/**
+ * Cheap Preetham-ish bake from sun elevation (degrees).
+ * Isolates chromaticity vs march without a full Preetham sky model.
+ */
+function preethamBakeIrradiance(
+  elevationDeg: number,
+  outSun: Vector3,
+  outSky: Vector3
+): void {
+  const elev = Math.max(-5, Math.min(90, elevationDeg))
+  const daylight = Math.max(0, Math.min(1, elev / 90))
+  const soft = Math.pow(daylight, 0.65)
+  outSun.set(
+    15 * (1.08 - 0.12 * soft) * (0.15 + 0.85 * soft),
+    12.5 * (0.95 + 0.05 * soft) * (0.15 + 0.85 * soft),
+    10 * (0.75 + 0.3 * soft) * (0.15 + 0.85 * soft)
+  )
+  const skyScale = 0.35 + 0.65 * soft
+  outSky.set(0.38 * skyScale, 0.5 * skyScale, 0.72 * skyScale)
+  if (elev < 0) {
+    outSun.multiplyScalar(0.05)
+    outSky.multiplyScalar(0.35)
+  }
+}
+
 export function bindCloudControls(deps: CloudControlsDeps): {
   dispose: () => void
 } {
@@ -76,7 +93,6 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     groundBounceOutput,
     groundMaterial,
     hemisphere,
-    irradianceModeInput,
     landmarkMaterial,
     layerControls,
     marchIterationsInput,
@@ -112,8 +128,6 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     updateTemporalHistory
   } = deps
 
-  let irradianceMode: IrradianceMode = deps.irradianceMode
-
   const syncQualityControlsFromNode = (): void => {
     resolutionScaleInput.value = String(cloudNode.resolutionScale)
     resolutionScaleOutput.value = `${Math.round(cloudNode.resolutionScale * 100)}%`
@@ -140,9 +154,8 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     )
     powderScaleInput.value = String(cloudNode.powderScale)
     powderScaleOutput.value = cloudNode.powderScale.toFixed(2)
-    // HTML defaults win (exposure / sky intensity already on the inputs).
-    cloudNode.skyLightScale = Number(skyLightScaleInput.value)
-    skyLightScaleOutput.value = Number(skyLightScaleInput.value).toFixed(2)
+    skyLightScaleInput.value = String(cloudNode.skyLightScale)
+    skyLightScaleOutput.value = Number(cloudNode.skyLightScale).toFixed(2)
     skyIntensityOutput.value = Number(skyIntensityInput.value).toFixed(2)
     groundBounceInput.value = String(cloudNode.groundBounceScale)
     groundBounceOutput.value = cloudNode.groundBounceScale.toFixed(2)
@@ -246,37 +259,18 @@ export function bindCloudControls(deps: CloudControlsDeps): {
     sceneShadowsEnabled.value = sceneShadowsInput.checked ? 1 : 0
   }
 
-  const applyIrradianceMode = (): void => {
+  const applyIrradiance = (): void => {
     const env = cloudNode.environment
     const elev = Number(sunInput.value)
     const skyIntensity = Number(skyIntensityInput.value)
-    if (irradianceMode === 'preethamBake') {
-      preethamBakeIrradiance(elev, env.sunIrradiance, env.skyIrradiance)
-      env.skyIrradiance.multiplyScalar(skyIntensity)
-    } else {
-      env.sunIrradiance.copy(artDirectedSun)
-      // Baseline artDirectedSky is 0.15; slider is a multiplier (1 = 0.15).
-      env.skyIrradiance.copy(artDirectedSky).multiplyScalar(skyIntensity)
-    }
+    preethamBakeIrradiance(elev, env.sunIrradiance, env.skyIrradiance)
+    env.skyIrradiance.multiplyScalar(skyIntensity)
     cloudNode.resetTemporalHistory()
-  }
-
-  const updateIrradianceMode = (): void => {
-    irradianceMode = irradianceModeInput.value as IrradianceMode
-    if (irradianceMode === 'takram') {
-      console.warn('[demo] takram mode blocked — falling back to preethamBake.')
-      irradianceMode = 'preethamBake'
-      irradianceModeInput.value = 'preethamBake'
-    }
-    const url = new URL(location.href)
-    url.searchParams.set('irradiance', irradianceMode)
-    history.replaceState(null, '', url)
-    applyIrradianceMode()
   }
 
   const updateSunAndIrradiance = (): void => {
     updateSun()
-    applyIrradianceMode()
+    applyIrradiance()
   }
 
   const updateSun = (): void => {
@@ -336,7 +330,7 @@ export function bindCloudControls(deps: CloudControlsDeps): {
 
   const updateSkyIntensity = (): void => {
     skyIntensityOutput.value = Number(skyIntensityInput.value).toFixed(2)
-    applyIrradianceMode()
+    applyIrradiance()
   }
 
   const updateGroundBounce = (): void => {
@@ -389,7 +383,6 @@ export function bindCloudControls(deps: CloudControlsDeps): {
   groundBounceInput.addEventListener('input', updateGroundBounce)
   phaseFunctionInput.addEventListener('change', updatePhaseFunction)
   sunInput.addEventListener('input', updateSunAndIrradiance)
-  irradianceModeInput.addEventListener('change', updateIrradianceMode)
   exposureInput.addEventListener('input', updateExposure)
   updateCoverage()
   syncLayerControlsFromNode()
@@ -401,9 +394,7 @@ export function bindCloudControls(deps: CloudControlsDeps): {
   temporalHistoryInput.checked = true
   updateTemporalHistory()
   updateSun()
-  // Keep module artDirectedSun/Sky (1 / 0.15). Env boots as Vector3(0) —
-  // copying those zeros here made ?irradiance=artDirected go black.
-  applyIrradianceMode()
+  applyIrradiance()
   applyStbnJitterFreeze()
   updateExposure()
 
