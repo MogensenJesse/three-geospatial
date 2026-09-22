@@ -15,12 +15,10 @@ import {
   If,
   int,
   ivec2,
-  max,
   mix,
   positionGeometry,
   screenCoordinate,
   screenUV,
-  sqrt,
   texture,
   textureSize,
   uniform,
@@ -40,9 +38,13 @@ import {
 } from 'three/webgpu'
 
 import { bayerIndices } from '../bayer'
-import { FnVar } from './internal/FnVar'
 import type { Node } from './internal/node'
 import { outputTexture } from './internal/OutputTextureNode'
+import {
+  closestDepthVelocity,
+  motionFactor,
+  varianceClip
+} from './temporalResolve'
 
 const { resetRendererState, restoreRendererState } = RendererUtils
 
@@ -73,112 +75,22 @@ const bayerPhaseNodes = /*#__PURE__*/ uniformArray(
   'int'
 ).setName('cloudsBayerIndices')
 
-const clipAABB = /*#__PURE__*/ FnVar(
-  (
-    current: Node<'vec4'>,
-    history: Node<'vec4'>,
-    minColor: Node<'vec4'>,
-    maxColor: Node<'vec4'>
-  ): Node<'vec4'> => {
-    const center = maxColor.rgb.add(minColor.rgb).mul(0.5).toConst()
-    const extent = maxColor.rgb.sub(minColor.rgb).mul(0.5).add(1e-7)
-    const delta = history.sub(vec4(center, current.a)).toConst()
-    const unit = delta.xyz.div(extent).abs().toConst()
-    const maximum = max(unit.x, max(unit.y, unit.z)).toConst()
-    return maximum
-      .greaterThan(1)
-      .select(vec4(center, current.a).add(delta.div(maximum)), history)
-  }
-)
-
-/**
- * UV-based variance clipping for the low-resolution input. The WebGL TAAU path
- * samples this neighbourhood with filtered texture reads rather than integer
- * texel loads.
- */
-const varianceClippingUV = /*#__PURE__*/ FnVar(
-  (
-    inputNode: TextureNode,
-    uv: Node<'vec2'>,
-    current: Node<'vec4'>,
-    history: Node<'vec4'>,
-    gamma: Node<'float'>
-  ): Node<'vec4'> => {
-    const inputTexelSize = vec2(textureSize(inputNode)).reciprocal()
-    const moment1 = current.toVar()
-    const moment2 = current.pow2().toVar()
-
-    for (const [x, y] of varianceOffsets) {
-      const neighbor = texture(
-        inputNode,
-        uv.add(vec2(x, y).mul(inputTexelSize)),
-        int(0)
-      ).toConst()
-      moment1.addAssign(neighbor)
-      moment2.addAssign(neighbor.pow2())
-    }
-
-    const sampleCount = varianceOffsets.length + 1
-    const mean = moment1.div(sampleCount).toConst()
-    const deviation = sqrt(moment2.div(sampleCount).sub(mean.pow2()).max(0))
-      .mul(gamma)
-      .toConst()
-    const minColor = mean.sub(deviation).toConst()
-    const maxColor = mean.add(deviation).toConst()
-    // WebGL: clipAABB(clamp(mean, min, max), history, ...) — not current.
-    return clipAABB(mean.clamp(minColor, maxColor), history, minColor, maxColor)
-  }
-)
-
-const varianceClippingLoad = /*#__PURE__*/ FnVar(
-  (
-    inputNode: TextureNode,
-    coord: Node<'ivec2'>,
-    current: Node<'vec4'>,
-    history: Node<'vec4'>,
-    gamma: Node<'float'>
-  ): Node<'vec4'> => {
-    const maxCoord = ivec2(textureSize(inputNode)).sub(1).toConst()
-    const moment1 = current.toVar()
-    const moment2 = current.pow2().toVar()
-
-    for (const [x, y] of varianceOffsets) {
+function sampleClosestCloudVelocity(
+  velocityNode: TextureNode,
+  coord: Node<'ivec2'>
+): Node<'vec4'> {
+  const maxCoord = ivec2(textureSize(velocityNode)).sub(1).toConst()
+  return closestDepthVelocity({
+    offsets: closestOffsets,
+    initial: vec4(1e7, 0, 0, 0),
+    sample: (x, y) => {
       const neighborCoord = coord
         .add(ivec2(x, y))
         .clamp(ivec2(0), maxCoord)
         .toConst()
-      const neighbor = inputNode.load(neighborCoord).toConst()
-      moment1.addAssign(neighbor)
-      moment2.addAssign(neighbor.pow2())
+      return velocityNode.load(neighborCoord)
     }
-
-    const sampleCount = varianceOffsets.length + 1
-    const mean = moment1.div(sampleCount).toConst()
-    const deviation = sqrt(moment2.div(sampleCount).sub(mean.pow2()).max(0))
-      .mul(gamma)
-      .toConst()
-    const minColor = mean.sub(deviation).toConst()
-    const maxColor = mean.add(deviation).toConst()
-    // WebGL: clipAABB(clamp(mean, min, max), history, ...) — not current.
-    return clipAABB(mean.clamp(minColor, maxColor), history, minColor, maxColor)
-  }
-)
-
-function getClosestDepthVelocity(
-  velocityNode: TextureNode,
-  coord: Node<'ivec2'>
-): Node<'vec4'> {
-  const closest = vec4(1e7, 0, 0, 0).toVar()
-  const maxCoord = ivec2(textureSize(velocityNode)).sub(1).toConst()
-  for (const [x, y] of closestOffsets) {
-    const neighborCoord = coord
-      .add(ivec2(x, y))
-      .clamp(ivec2(0), maxCoord)
-      .toConst()
-    const neighbor = velocityNode.load(neighborCoord)
-    closest.assign(neighbor.r.lessThan(closest.r).select(neighbor, closest))
-  }
-  return closest
+  })
 }
 
 class CloudsResolveColorNode extends TempNode {
@@ -220,7 +132,7 @@ class CloudsResolveColorNode extends TempNode {
           outputColor.assign(current)
         }).Else(() => {
           // historyValid as mix factor stays live in WGSL (avoids bool fold).
-          const closest = getClosestDepthVelocity(
+          const closest = sampleClosestCloudVelocity(
             owner.velocityNode,
             lowResCoord
           ).toConst()
@@ -233,19 +145,23 @@ class CloudsResolveColorNode extends TempNode {
           const historyReproj = texture(owner.historyNode, prevUv, int(0))
           // WebGL TAAU: variance-clip history; on miss fall back to current
           // (not same-UV history - that leaves infinite motion trails).
-          const clipped = varianceClippingUV(
-            owner.inputNode,
-            screenUV,
+          // Filtered UV reads, 4-neighbour cross (+ current = 5).
+          const inputTexelSize = vec2(textureSize(owner.inputNode)).reciprocal()
+          const clipped = varianceClip({
+            offsets: varianceOffsets,
             current,
-            historyReproj,
-            owner.varianceGamma
-          )
+            history: historyReproj,
+            gamma: owner.varianceGamma,
+            sampleNeighbor: (x, y) =>
+              texture(
+                owner.inputNode,
+                screenUV.add(vec2(x, y).mul(inputTexelSize)),
+                int(0)
+              )
+          })
           // Hard-cut ghosts. OOB -> current; fast UV motion -> lean to
           // current (gamma=2 keeps soft stills). Prove Y with debugOutput=velocity.
-          const speed = closest.g.abs().add(closest.b.abs())
-          const motion = speed
-            .smoothstep(float(0.002), float(0.014))
-            .mul(speed.smoothstep(float(0.002), float(0.014))) // 1b follow-up: harder linger cut
+          const motion = motionFactor(closest.gb)
           const historySample = inside.select(
             mix(clipped, current, motion),
             current
@@ -254,7 +170,7 @@ class CloudsResolveColorNode extends TempNode {
         })
       }).Else(() => {
         const current = owner.inputNode.load(coord).toConst()
-        const closest = getClosestDepthVelocity(
+        const closest = sampleClosestCloudVelocity(
           owner.velocityNode,
           coord
         ).toConst()
@@ -265,18 +181,19 @@ class CloudsResolveColorNode extends TempNode {
           .and(prevUv.lessThanEqual(1).all())
 
         const history = texture(owner.historyNode, prevUv, int(0))
-        const clipped = varianceClippingLoad(
-          owner.inputNode,
-          coord,
+        const maxCoord = ivec2(textureSize(owner.inputNode)).sub(1).toConst()
+        const clipped = varianceClip({
+          offsets: varianceOffsets,
           current,
           history,
-          float(1)
-        )
+          gamma: float(1),
+          sampleNeighbor: (x, y) =>
+            owner.inputNode.load(
+              coord.add(ivec2(x, y)).clamp(ivec2(0), maxCoord)
+            )
+        })
         // Same motion hard-cut on the full-res TAA path.
-        const speed = closest.g.abs().add(closest.b.abs())
-        const motion = speed
-          .smoothstep(float(0.002), float(0.014))
-          .mul(speed.smoothstep(float(0.002), float(0.014))) // 1b follow-up: harder linger cut
+        const motion = motionFactor(closest.gb)
         const temporal = mix(clipped, current, owner.temporalAlpha)
         const motionSafe = mix(temporal, current, motion)
         const withHistory = inside.select(motionSafe, current)

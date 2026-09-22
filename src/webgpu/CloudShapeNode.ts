@@ -1,13 +1,14 @@
 // src/webgpu/CloudShapeNode.ts
 
 import { Vector3 } from 'three'
-import { int, vec2, vec3, vec4 } from 'three/tsl'
+import { int, vec3 } from 'three/tsl'
 
 import { CLOUD_SHAPE_TEXTURE_SIZE } from '../constants'
 import { FnLayout } from './internal/FnLayout'
 import type { Node } from './internal/node'
 import { ProceduralTexture3DNode } from './ProceduralTexture3DNode'
 import { stackablePerlinNoise, stackableWorleyNoise } from './stackableNoise'
+import { worleyFbm } from './worleyFbm'
 
 export const perlinWorley = /*#__PURE__*/ FnLayout({
   name: 'perlinWorley',
@@ -32,26 +33,6 @@ export const perlinWorley = /*#__PURE__*/ FnLayout({
   return perlin.remap(0, 1, fbm, 1)
 })
 
-export const worleyFbm = /*#__PURE__*/ FnLayout({
-  name: 'worleyFbm',
-  type: 'float',
-  inputs: [{ name: 'point', type: 'vec3' }]
-})(([point]) => {
-  const cellCount = 4
-  const noise = vec4(
-    stackableWorleyNoise(point, cellCount * 2),
-    stackableWorleyNoise(point, cellCount * 4),
-    stackableWorleyNoise(point, cellCount * 8),
-    stackableWorleyNoise(point, cellCount * 16)
-  ).oneMinus()
-  const fbm = vec3(
-    noise.xyz.dot(vec3(0.625, 0.25, 0.125)),
-    noise.yzw.dot(vec3(0.625, 0.25, 0.125)),
-    noise.zw.dot(vec2(0.75, 0.25))
-  )
-  return fbm.dot(vec3(0.625, 0.25, 0.125))
-})
-
 export class CloudShapeNode extends ProceduralTexture3DNode {
   static override get type(): string {
     return 'CloudShapeNode'
@@ -62,6 +43,6 @@ export class CloudShapeNode extends ProceduralTexture3DNode {
   }
 
   protected override setupOutputNode(uvw: Node<'vec3'>): Node {
-    return perlinWorley(uvw).remap(worleyFbm(uvw).sub(1), 1)
+    return perlinWorley(uvw).remap(worleyFbm(uvw, 8).sub(1), 1)
   }
 }

@@ -8,8 +8,8 @@ import type { Node } from './internal/node'
 import { ProceduralTextureNode } from './ProceduralTextureNode'
 import { stackablePerlinNoise, stackableWorleyNoise } from './stackableNoise'
 
-const worleyFbm = /*#__PURE__*/ FnLayout({
-  name: 'worleyFbm',
+const weatherWorleyFbm = /*#__PURE__*/ FnLayout({
+  name: 'weatherWorleyFbm',
   type: 'float',
   inputs: [
     { name: 'point', type: 'vec3' },
@@ -47,7 +47,7 @@ export class LocalWeatherNode extends ProceduralTextureNode {
 
     // Mid clouds
     {
-      let worley = worleyFbm(
+      let worley = weatherWorleyFbm(
         vec3(uv, 0).add(vec3(0.5)),
         float(8.0), // frequency
         float(0.4), // amplitude
@@ -61,7 +61,7 @@ export class LocalWeatherNode extends ProceduralTextureNode {
 
     // Low clouds
     {
-      let worley = worleyFbm(
+      let worley = weatherWorleyFbm(
         vec3(uv, 0),
         float(16.0), // frequency
         float(0.4), // amplitude

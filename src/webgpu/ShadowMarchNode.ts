@@ -231,6 +231,27 @@ export class ShadowMarchNode extends TempNode {
     return this.cascadeAtlas.getTextureNode()
   }
 
+  /**
+   * Point the march at the current cascade array and drop temporal history.
+   * Pass `atlas` explicitly when shadows are disabled (`null`); otherwise the
+   * current atlas is bound.
+   */
+  rebindConsumers(
+    host: {
+      marchNode: {
+        shadowAtlas: TextureNode | null
+        invalidateMaterial(): void
+      }
+      resetTemporalHistory(): unknown
+    },
+    atlas: TextureNode | null = this.getAtlasNode()
+  ): void {
+    host.marchNode.shadowAtlas = atlas
+    host.marchNode.invalidateMaterial()
+    this.resolveNode.reset()
+    host.resetTemporalHistory()
+  }
+
   private packAtlas(renderer: NonNullable<NodeFrame['renderer']>): void {
     const count = this.shadowMaps.cascadeCount
     const sources = []

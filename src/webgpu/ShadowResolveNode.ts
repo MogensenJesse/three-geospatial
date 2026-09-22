@@ -11,12 +11,10 @@ import {
 } from 'three'
 import {
   ivec2,
-  max,
   mix,
   positionGeometry,
   screenCoordinate,
   screenUV,
-  sqrt,
   texture,
   uniform,
   vec4
@@ -32,9 +30,9 @@ import {
   type TextureNode
 } from 'three/webgpu'
 
-import { FnVar } from './internal/FnVar'
 import type { Node } from './internal/node'
 import { outputTexture } from './internal/OutputTextureNode'
+import { closestDepthVelocity, varianceClip } from './temporalResolve'
 
 const { resetRendererState, restoreRendererState } = RendererUtils
 
@@ -62,57 +60,7 @@ const closestOffsets: Array<readonly [number, number]> = [
 ]
 
 // Reference: https://github.com/playdeadgames/temporal
-const clipAABB = /*#__PURE__*/ FnVar(
-  (
-    current: Node<'vec4'>,
-    history: Node<'vec4'>,
-    minColor: Node<'vec4'>,
-    maxColor: Node<'vec4'>
-  ): Node<'vec4'> => {
-    const pClip = maxColor.rgb.add(minColor.rgb).mul(0.5).toConst()
-    const eClip = maxColor.rgb.sub(minColor.rgb).mul(0.5).add(1e-7)
-    const vClip = history.sub(vec4(pClip, current.a)).toConst()
-    const vUnit = vClip.xyz.div(eClip)
-    const maxUnit = max(
-      vUnit.abs().x,
-      max(vUnit.abs().y, vUnit.abs().z)
-    ).toConst()
-    return maxUnit
-      .greaterThan(1)
-      .select(vec4(pClip, current.a).add(vClip.div(maxUnit)), history)
-  }
-)
-
-/**
- * Variance clipping of a history sample against the 3x3 neighbourhood of the
- * current cascade buffer. Port of `varianceClipping` in
- * `varianceClipping.glsl`.
- */
-const varianceClipping = /*#__PURE__*/ FnVar(
-  (
-    inputNode: TextureNode,
-    coord: Node<'ivec2'>,
-    current: Node<'vec4'>,
-    history: Node<'vec4'>,
-    gamma: Node<'float'>
-  ): Node<'vec4'> => {
-    const moment1 = current.toVar()
-    const moment2 = current.pow2().toVar()
-    for (const [x, y] of varianceOffsets) {
-      const neighbor = inputNode.load(coord.add(ivec2(x, y))).toConst()
-      moment1.addAssign(neighbor)
-      moment2.addAssign(neighbor.pow2())
-    }
-    const N = varianceOffsets.length + 1
-    const mean = moment1.div(N).toConst()
-    const variance = sqrt(moment2.div(N).sub(mean.pow2()).max(0))
-      .mul(gamma)
-      .toConst()
-    const minColor = mean.sub(variance).toConst()
-    const maxColor = mean.add(variance).toConst()
-    return clipAABB(mean.clamp(minColor, maxColor), history, minColor, maxColor)
-  }
-)
+// 8-neighbour box (+ current = 9), unclamped loads. Clouds use a 5-tap cross.
 
 /** Per-cascade resolve state. One material per cascade avoids select chains. */
 class CascadeResolve {
@@ -168,11 +116,11 @@ class ShadowResolveColorNode extends TempNode {
     // The closest fragment in the 3x3 neighbourhood supplies the cloud front
     // depth used for reprojection (mirrors WebGL getClosestFragment). Velocity
     // is stored in texels, so `texelSize` converts it to UV.
-    const closest = this.velocityNode.load(coord).toVar()
-    for (const [x, y] of closestOffsets) {
-      const neighbor = this.velocityNode.load(coord.add(ivec2(x, y)))
-      closest.assign(neighbor.r.lessThan(closest.r).select(neighbor, closest))
-    }
+    const closest = closestDepthVelocity({
+      offsets: closestOffsets,
+      initial: this.velocityNode.load(coord),
+      sample: (x, y) => this.velocityNode.load(coord.add(ivec2(x, y)))
+    })
 
     const velocity = closest.gb.mul(this.texelSize)
     const prevUv = screenUV.sub(velocity)
@@ -183,13 +131,13 @@ class ShadowResolveColorNode extends TempNode {
       .and(prevUv.y.lessThanEqual(1))
 
     const history = this.historyNode.sample(prevUv)
-    const clipped = varianceClipping(
-      this.inputNode,
-      coord,
+    const clipped = varianceClip({
+      offsets: varianceOffsets,
       current,
       history,
-      this.varianceGamma
-    )
+      gamma: this.varianceGamma,
+      sampleNeighbor: (x, y) => this.inputNode.load(coord.add(ivec2(x, y)))
+    })
     return inside.select(mix(clipped, current, this.temporalAlpha), current)
   }
 }

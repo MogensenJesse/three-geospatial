@@ -69,9 +69,5 @@ export function applyCloudsQualitySettings(
 
   // Cascade array recreates on map/cascade change; rebind so sampling never keeps a
   // disposed GPU texture after preset switches.
-  host.marchNode.shadowAtlas = host.shadowNode.getAtlasNode()
-  // No-ops when the march variant key is unchanged (for example, re-applying the same preset).
-  host.marchNode.invalidateMaterial()
-  host.shadowNode.resolveNode.reset()
-  host.resetTemporalHistory()
+  host.shadowNode.rebindConsumers(host)
 }

@@ -65,7 +65,15 @@ export class OutputTexture3DNode extends Texture3DNode {
 
   override clone(): this {
     // @ts-expect-error Subclasses preserve this constructor contract.
-    return new this.constructor(this.owner, this.value)
+    const node = new this.constructor(this.owner, this.value)
+    node.uvNode = this.uvNode
+    node.levelNode = this.levelNode
+    node.biasNode = this.biasNode
+    node.sampler = this.sampler
+    node.depthNode = this.depthNode
+    node.compareNode = this.compareNode
+    node.gradNode = this.gradNode
+    return node
   }
 }
 

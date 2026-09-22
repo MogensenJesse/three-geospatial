@@ -271,12 +271,10 @@ export function installCloudsNodeTuning(proto: object): void {
       set(this: CloudsNodeTuningHost, value: any) {
         this.shadowNode.enabled = value
         this.shadowNode.shadow.enabled.value = value ? 1 : 0
-        this.marchNode.shadowAtlas = value
-          ? this.shadowNode.getAtlasNode()
-          : null
-        this.marchNode.invalidateMaterial()
-        this.shadowNode.resolveNode.reset()
-        this.resetTemporalHistory()
+        this.shadowNode.rebindConsumers(
+          this,
+          value ? this.shadowNode.getAtlasNode() : null
+        )
       },
       enumerable: true,
       configurable: true
@@ -289,10 +287,7 @@ export function installCloudsNodeTuning(proto: object): void {
         const previous = this.shadowNode.shadowMaps.mapSize.x
         this.shadowNode.setMapSize(value)
         if (value !== previous) {
-          this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
-          this.marchNode.invalidateMaterial()
-          this.shadowNode.resolveNode.reset()
-          this.resetTemporalHistory()
+          this.shadowNode.rebindConsumers(this)
         }
       },
       enumerable: true,
@@ -306,10 +301,7 @@ export function installCloudsNodeTuning(proto: object): void {
         const previous = this.shadowNode.shadowMaps.cascadeCount
         this.shadowNode.setCascadeCount(value)
         if (value !== previous) {
-          this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
-          this.marchNode.invalidateMaterial()
-          this.shadowNode.resolveNode.reset()
-          this.resetTemporalHistory()
+          this.shadowNode.rebindConsumers(this)
         }
       },
       enumerable: true,

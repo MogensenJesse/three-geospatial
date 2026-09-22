@@ -56,7 +56,7 @@ import {
   sampleWeather
 } from './sampling'
 import type { ShadowParameterNodes } from './shadowParameters'
-import { sampleShadowOpticalDepth } from './shadowSampling'
+import { raySlabIntersection, sampleShadowOpticalDepth } from './shadowSampling'
 
 const RECIPROCAL_PI4 = /*#__PURE__*/ float(1 / (4 * Math.PI))
 
@@ -360,9 +360,15 @@ export function setupCloudsMarch(
         }
       )
     }).Else(() => {
-      const t0 = bottomY.sub(cameraPosition.y).div(rayDirection.y)
-      const t1 = topY.sub(cameraPosition.y).div(rayDirection.y)
-      rayNearFar.assign(vec2(max(nearPlane, min(t0, t1)), max(t0, t1)))
+      // Horizontal rays stay in the branch above: raySlabIntersection returns
+      // vec2(-1) for them, which would drop a camera already inside the slab.
+      const hits = raySlabIntersection(
+        cameraPosition,
+        rayDirection,
+        bottomY,
+        topY
+      )
+      rayNearFar.assign(vec2(max(nearPlane, hits.x), hits.y))
     })
 
     const sceneViewZ = float(0).toVar()
