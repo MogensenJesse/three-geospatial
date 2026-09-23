@@ -53,12 +53,13 @@ npm run build:library
 npm pack
 ```
 
-In the other project, install the tarball `npm pack` printed, or point `file:` at this repo:
+In the other project, install the tarball `npm pack` printed. The path is this repo directory (`three-geospatial`), not a folder named after the package:
 
 ```sh
-npm install ./webgpu-clouds-0.1.0.tgz
-# or: npm install file:../webgpu-clouds
+npm install path/to/three-geospatial/webgpu-clouds-0.2.0.tgz
 ```
+
+How the node, layers, and frame graph fit together: [USING.md](USING.md).
 
 Peer dependency: `three@>=0.185.0 <0.187.0` (developed against r186; r185 should work).
 
@@ -102,7 +103,8 @@ const cloudNode = clouds({
   cloudLayers: [
     { channel: 'r', altitude: 750, height: 650, densityScale: 0.2, shadow: true },
     { channel: 'g', altitude: 1000, height: 1200, densityScale: 0.2, shadow: true },
-    { channel: 'b', altitude: 7500, height: 500, densityScale: 0.003 }
+    { channel: 'b', altitude: 7500, height: 500, densityScale: 0.003 },
+    { channel: 'a' }
   ]
 })
 

@@ -1,6 +1,6 @@
 {
   "name": "webgpu-clouds",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Standalone flat-world volumetric clouds for Three.js WebGPU (atmosphere-agnostic)",
   "private": true,
   "type": "module",
@@ -19,7 +19,8 @@
   "files": [
     "dist/package",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "USING.md"
   ],
   "scripts": {
     "dev": "vite",
