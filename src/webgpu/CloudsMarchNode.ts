@@ -14,7 +14,7 @@ import {
   type Texture,
   Vector2
 } from 'three'
-import { positionGeometry, texture, vec4 } from 'three/tsl'
+import { texture } from 'three/tsl'
 import {
   MRTNode,
   type NodeBuilder,
@@ -167,8 +167,6 @@ export class CloudsMarchNode extends TempNode {
     this.material.blending = NoBlending
     this.material.depthTest = false
     this.material.depthWrite = false
-    // Fullscreen clip-space quad (same pattern as core debug / filter RTT).
-    this.material.vertexNode = vec4(positionGeometry.xy, 0, 1)
     this.material.customProgramCacheKey = () =>
       cloudsMarchVariantKey(
         resolveCloudsMarchVariant(this.march, this.shadowAtlas)
@@ -366,11 +364,8 @@ export class CloudsMarchNode extends TempNode {
   }
 
   /**
-   * Rebuild the march fragment graph for the current variant key.
-   * No-ops when the key is unchanged.
-   */
-  /**
-   * @param force - Rebuild even when the variant key is unchanged (e.g. WGSL dump).
+   * Rebuild the march fragment graph when the variant key changes.
+   * @param force - Rebuild even when the key is unchanged.
    */
   invalidateMaterial(force = false): this {
     const key = cloudsMarchVariantKey(
@@ -399,7 +394,6 @@ export class CloudsMarchNode extends TempNode {
   override dispose(): void {
     this.renderTarget.dispose()
     this.material.dispose()
-    this.mesh.geometry.dispose()
     super.dispose()
   }
 }

@@ -77,4 +77,7 @@ export function applyCloudsQualitySettings(
   shadowMarch.minDensity.value = shadowQuality.minDensity
   shadowMarch.minExtinction.value = shadowQuality.minExtinction
   shadowMarch.minTransmittance.value = shadowQuality.minTransmittance
+  // Octaves are written on the march uniform after the shadow rebind.
+  // Invalidate once so high↔ultra compiles the new trip count.
+  host.marchNode.invalidateMaterial()
 }

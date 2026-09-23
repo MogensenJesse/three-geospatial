@@ -1,7 +1,7 @@
 // @ts-nocheck — Three r186 TSL typings are incomplete for this module; revisit.
 // src/webgpu/cloudOpticalDepth.ts
 
-import { Break, float, If, int, Loop, max, mix, struct } from 'three/tsl'
+import { Break, float, If, int, Loop, max, mix, struct, vec4 } from 'three/tsl'
 
 import type { CloudsEnvironment } from './CloudsEnvironment'
 import { FnLayout } from './internal/FnLayout'
@@ -141,16 +141,23 @@ export function marchCloudOpticalDepth(
             height,
             mipLevel
           )
-          const media = sampleMedia(
-            parameters,
-            layers,
-            weather,
-            positionMeters,
-            uv,
-            mipLevel,
-            jitter
+          If(
+            weather.get('density').greaterThan(vec4(march.minDensity)).any(),
+            () => {
+              const media = sampleMedia(
+                parameters,
+                layers,
+                weather,
+                positionMeters,
+                uv,
+                mipLevel,
+                jitter
+              )
+              opticalDepth.addAssign(
+                media.get('extinction').mul(stepSizeMeters)
+              )
+            }
           )
-          opticalDepth.addAssign(media.get('extinction').mul(stepSizeMeters))
           nextDistance.addAssign(stepSizeWorld)
           stepSizeWorld.mulAssign(march.secondaryStepScale)
           stepSizeMeters.mulAssign(march.secondaryStepScale)

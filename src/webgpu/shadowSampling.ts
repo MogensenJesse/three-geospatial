@@ -194,7 +194,8 @@ export function sampleShadowOpticalDepth(
                 vec2(u, v)
               ),
               distanceToTop,
-              distanceOffset
+              // The local-sun march reports world units. shadow.r is meters.
+              distanceOffset.div(worldScale)
             )
           }
 
@@ -273,6 +274,9 @@ function getShadowRay(
     distanceWorld: max(0, hits.y.sub(near))
   }
 }
+
+/** Half float saturates at 65504. A low sun makes an empty shadow ray longer than that. */
+const SHADOW_FRONT_DISTANCE_LIMIT = 6e4
 
 /** Cloud-front depth and UV velocity for the shadow temporal resolve. */
 export function setupShadowMarchVelocity(
@@ -419,13 +423,17 @@ export function setupShadowMarchColor(
       }
     )
 
-    const output = vec4(maxRayDistance, 0, 0, 0).toVar()
+    const storedFrontDistance = min(
+      maxRayDistance,
+      float(SHADOW_FRONT_DISTANCE_LIMIT)
+    )
+    const output = vec4(storedFrontDistance, 0, 0, 0).toVar()
     If(sampleCount.greaterThan(0), () => {
       output.assign(
         vec4(
           min(
             weightedDistanceSum.div(max(transmittanceSum, 1e-7)),
-            maxRayDistance
+            storedFrontDistance
           ),
           extinctionSum.div(sampleCount),
           opticalDepth,

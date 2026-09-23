@@ -147,7 +147,7 @@ Quality:
 
 ```ts
 cloudNode.applyQualitySettings(qualityPresets.high)
-// or cloudNode.qualityPreset = 'medium'
+cloudNode.setQualityPreset('medium')
 ```
 
 ## Coordinates and lighting

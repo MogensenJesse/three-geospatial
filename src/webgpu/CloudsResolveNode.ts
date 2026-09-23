@@ -21,7 +21,6 @@ import {
   max,
   min,
   mix,
-  positionGeometry,
   screenCoordinate,
   screenUV,
   struct,
@@ -49,24 +48,12 @@ import type { Node } from './internal/node'
 import { outputTexture } from './internal/OutputTextureNode'
 import {
   closestDepthVelocityRange,
-  motionFactor,
-  varianceClipEx
+  closestNeighbourOffsets,
+  cloudVarianceClip,
+  motionFactor
 } from './temporalResolve'
 
 const { resetRendererState, restoreRendererState } = RendererUtils
-
-// Neighbours only. The center texel is loaded once and passed in, so a block
-// that sits off the velocity target still reads a clamped texel.
-const closestOffsets: Array<readonly [number, number]> = [
-  [-1, -1],
-  [-1, 0],
-  [-1, 1],
-  [0, -1],
-  [0, 1],
-  [1, -1],
-  [1, 0],
-  [1, 1]
-]
 
 // Full-res TAA keeps the 4-neighbour cross (+ current = 5).
 const varianceOffsets: Array<readonly [number, number]> = [
@@ -94,10 +81,8 @@ const TEMPORAL_UPSCALE_SIGMA = 0.55
 const TEMPORAL_UPSCALE_STATIC_GAMMA = 2
 /** Alpha half-extent floor. Only alpha is clamped; rgb stays on the original box. */
 const HISTORY_ALPHA_EXTENT_FLOOR = 1 / 64
-
-function cloudHistoryExtent(): Node<'vec4'> {
-  return vec4(0, 0, 0, float(HISTORY_ALPHA_EXTENT_FLOOR))
-}
+/** Depth reject stays off until the pixel is actually moving. */
+const DEPTH_REJECT_MOTION = 0.02
 
 const resolveMrtStruct = /*#__PURE__*/ struct(
   { color: 'vec4', confidence: 'vec2' },
@@ -122,7 +107,7 @@ function sampleClosestCloudVelocity(
     return velocityNode.load(neighborCoord)
   }
   return closestDepthVelocityRange({
-    offsets: closestOffsets,
+    offsets: closestNeighbourOffsets,
     center: loadAt(0, 0),
     sample: loadAt
   })
@@ -161,27 +146,58 @@ class CloudsResolveColorNode extends MRTNode {
         return histDepth
           .lessThan(depthMin.div(scale))
           .or(histDepth.greaterThan(depthMax.mul(scale)))
-          .and(motion.greaterThan(float(0.02)))
+          .and(motion.greaterThan(float(DEPTH_REJECT_MOTION)))
+      }
+      const readHistoryState = (
+        neighborhood: ReturnType<typeof sampleClosestCloudVelocity>,
+        prevUv: Node<'vec2'>
+      ): {
+        histMeta: Node<'vec4'>
+        motion: Node<'float'>
+        depthReject: Node<'bool'>
+        ownDepth: Node<'float'>
+      } => {
+        const depthMin = neighborhood.minDepth.div(owner.cameraFar)
+        const depthMax = neighborhood.maxDepth.div(owner.cameraFar)
+        const ownDepth = neighborhood.center.r.div(owner.cameraFar)
+        const histMeta = texture(owner.historyMetaNode, prevUv, int(0))
+        const motion = motionFactor(neighborhood.closest.gb)
+        return {
+          histMeta,
+          motion,
+          depthReject: depthIsStale(histMeta.g, depthMin, depthMax, motion),
+          ownDepth
+        }
       }
       // N is history confidence before this sample. Saturated N (Nmax = 1/a)
-      // makes alpha = a*w, today's blend. OOB, depth reject, clips and motion
-      // only lower N, so those pixels converge faster and fall back toward the
+      // makes alpha = a*w, today's blend. OOB, depth reject and motion only
+      // lower N, so those pixels converge faster and fall back toward the
       // neighbourhood mean instead of the raw reconstruction.
-      const resolveTemporal = (
-        recon: Node<'vec4'>,
-        clipped: Node<'vec4'>,
-        mean: Node<'vec4'>,
-        clipAmount: Node<'float'>,
-        prevUv: Node<'vec2'>,
-        inside: Node<'bool'>,
-        weight: Node<'float'>,
-        freshAlpha: Node<'float'>,
-        motion: Node<'float'>,
-        ownDepth: Node<'float'>,
+      const resolveTemporal = (options: {
+        recon: Node<'vec4'>
+        clipped: Node<'vec4'>
+        mean: Node<'vec4'>
+        inside: Node<'bool'>
+        weight: Node<'float'>
+        freshAlpha: Node<'float'>
+        motion: Node<'float'>
+        ownDepth: Node<'float'>
         depthReject: Node<'bool'>
-      ): void => {
+        histMeta: Node<'vec4'>
+      }): void => {
+        const {
+          recon,
+          clipped,
+          mean,
+          inside,
+          weight,
+          freshAlpha,
+          motion,
+          ownDepth,
+          depthReject,
+          histMeta
+        } = options
         const nMax = max(freshAlpha, float(1e-4)).reciprocal()
-        const histMeta = texture(owner.historyMetaNode, prevUv, int(0))
         const histN = inside
           .select(histMeta.r, float(0))
           .mul(owner.historyValid)
@@ -189,15 +205,8 @@ class CloudsResolveColorNode extends MRTNode {
           min(histN, owner.rejectConfidence),
           histN
         )
-        // A still pixel keeps its confidence when the colour clip twitches.
-        // Motion lets a real clip shorten the tail.
-        const nClip = mix(
-          nDepth,
-          min(nDepth, owner.clipConfidenceCap),
-          clipAmount.smoothstep(float(0), float(1)).mul(motion)
-        )
         const N = min(
-          nClip,
+          nDepth,
           mix(nMax, owner.motionConfidenceFloor, motion)
         )
         const reconFallback = mix(
@@ -247,54 +256,47 @@ class CloudsResolveColorNode extends MRTNode {
           .and(prevUv.lessThanEqual(1).all())
 
         const historyReproj = texture(owner.historyNode, prevUv, int(0))
-        const depthMin = neighborhood.minDepth.div(owner.cameraFar)
-        const depthMax = neighborhood.maxDepth.div(owner.cameraFar)
-        const ownDepth = neighborhood.center.r.div(owner.cameraFar)
-        const histMeta = texture(owner.historyMetaNode, prevUv, int(0))
+        const historyState = readHistoryState(neighborhood, prevUv)
         // 3x3 around the reconstruction sample (+ center = 9). Still pixels
         // widen the box; motion falls back to varianceGamma. A moving depth
         // mismatch uses the tight reject gamma instead.
-        const motion = motionFactor(closest.gb)
-        const depthReject = depthIsStale(histMeta.g, depthMin, depthMax, motion)
-        const gamma = depthReject.select(
+        const gamma = historyState.depthReject.select(
           owner.varianceGammaReject,
           mix(
             owner.varianceGamma.mul(owner.varianceGammaStatic),
             owner.varianceGamma,
-            motion
+            historyState.motion
           )
         )
         const inputTexelSize = lowResSize.reciprocal()
-        const clip = varianceClipEx({
+        const clip = cloudVarianceClip({
           offsets: upscaleVarianceOffsets,
           current: recon,
           history: historyReproj,
           gamma,
-          clipAlpha: true,
-          minExtent: cloudHistoryExtent,
+          alphaExtentFloor: HISTORY_ALPHA_EXTENT_FLOOR,
           sampleNeighbor: (x, y) =>
             texture(
               owner.inputNode,
               reconUv.add(vec2(x, y).mul(inputTexelSize))
             )
         })
-        resolveTemporal(
+        resolveTemporal({
           recon,
-          clip.color,
-          clip.mean,
-          clip.clipAmount,
-          prevUv,
+          clipped: clip.color,
+          mean: clip.mean,
           inside,
           weight,
-          owner.temporalUpscaleAlpha,
-          motion,
-          ownDepth,
-          depthReject
-        )
+          freshAlpha: owner.temporalUpscaleAlpha,
+          motion: historyState.motion,
+          ownDepth: historyState.ownDepth,
+          depthReject: historyState.depthReject,
+          histMeta: historyState.histMeta
+        })
       }).Else(() => {
-        // Full-res TAA. Same confidence, depth reject, clip cap and mean
-        // fallback as the upscale path, with w = 1 and gamma = 1 unless the
-        // depth test tightens it. The colour neighbourhood stays the 4-cross.
+        // Full-res TAA. Same confidence, depth reject and mean fallback as the
+        // upscale path, with w = 1 and gamma = 1 unless the depth test tightens
+        // it. The colour neighbourhood stays the 4-cross.
         const current = owner.inputNode.load(coord).toConst()
         const neighborhood = sampleClosestCloudVelocity(
           owner.velocityNode,
@@ -308,38 +310,34 @@ class CloudsResolveColorNode extends MRTNode {
           .and(prevUv.lessThanEqual(1).all())
 
         const history = texture(owner.historyNode, prevUv, int(0))
-        const depthMin = neighborhood.minDepth.div(owner.cameraFar)
-        const depthMax = neighborhood.maxDepth.div(owner.cameraFar)
-        const ownDepth = neighborhood.center.r.div(owner.cameraFar)
-        const histMeta = texture(owner.historyMetaNode, prevUv, int(0))
-        const motion = motionFactor(closest.gb)
-        const depthReject = depthIsStale(histMeta.g, depthMin, depthMax, motion)
+        const historyState = readHistoryState(neighborhood, prevUv)
         const maxCoord = ivec2(textureSize(owner.inputNode)).sub(1).toConst()
-        const clip = varianceClipEx({
+        const clip = cloudVarianceClip({
           offsets: varianceOffsets,
           current,
           history,
-          gamma: depthReject.select(owner.varianceGammaReject, float(1)),
-          clipAlpha: true,
-          minExtent: cloudHistoryExtent,
+          gamma: historyState.depthReject.select(
+            owner.varianceGammaReject,
+            float(1)
+          ),
+          alphaExtentFloor: HISTORY_ALPHA_EXTENT_FLOOR,
           sampleNeighbor: (x, y) =>
             owner.inputNode.load(
               coord.add(ivec2(x, y)).clamp(ivec2(0), maxCoord)
             )
         })
-        resolveTemporal(
-          current,
-          clip.color,
-          clip.mean,
-          clip.clipAmount,
-          prevUv,
+        resolveTemporal({
+          recon: current,
+          clipped: clip.color,
+          mean: clip.mean,
           inside,
-          float(1),
-          owner.temporalAlpha,
-          motion,
-          ownDepth,
-          depthReject
-        )
+          weight: float(1),
+          freshAlpha: owner.temporalAlpha,
+          motion: historyState.motion,
+          ownDepth: historyState.ownDepth,
+          depthReject: historyState.depthReject,
+          histMeta: historyState.histMeta
+        })
       })
 
       return resolveMrtStruct(outputColor, meta)
@@ -400,8 +398,6 @@ export class CloudsResolveNode extends TempNode {
   readonly varianceGammaReject = uniform(1).setName('cloudsVarianceGammaReject')
   /** Confidence cap on a depth reject. 1 keeps a short tail; 0 is a hard reset. */
   readonly rejectConfidence = uniform(1).setName('cloudsRejectConfidence')
-  /** Confidence cap as a colour clip goes from none to a full reject. */
-  readonly clipConfidenceCap = uniform(1).setName('cloudsClipConfidenceCap')
   /**
    * Fast-motion confidence cap. 0 drops history and shows the neighbourhood
    * mean, which is the rotation test that shipped. 1 would hold N at 1 and
@@ -414,8 +410,8 @@ export class CloudsResolveNode extends TempNode {
   readonly fallbackConfidence = uniform(1).setName('cloudsFallbackConfidence')
   readonly temporalUpscaleNode = uniform(1).setName('cloudsTemporalUpscale')
   readonly historyValid = uniform(0).setName('cloudsHistoryValid')
-  /** Matches the march camera far. Meta depth is stored as depth / cameraFar. */
-  readonly cameraFar = uniform(1e8).setName('cloudsResolveCameraFar')
+  /** March camera far. History depth is stored as depth / this. */
+  readonly cameraFar: Node<'float'>
 
   private resolveTarget = this.createTarget()
   private historyTarget = this.createTarget()
@@ -431,10 +427,15 @@ export class CloudsResolveNode extends TempNode {
   /** When false, history is never reused (forces current-only resolve). */
   historyEnabled = true
 
-  constructor(inputNode: TextureNode, velocityNode: TextureNode) {
+  constructor(
+    inputNode: TextureNode,
+    velocityNode: TextureNode,
+    cameraFar: Node<'float'>
+  ) {
     super('vec4')
     this.inputNode = inputNode
     this.velocityNode = velocityNode
+    this.cameraFar = cameraFar
     this.updateBeforeType = NodeUpdateType.NONE
 
     this.textureNode = outputTexture(this, this.historyTarget.texture)
@@ -443,7 +444,6 @@ export class CloudsResolveNode extends TempNode {
     this.material.blending = NoBlending
     this.material.depthTest = false
     this.material.depthWrite = false
-    this.material.vertexNode = vec4(positionGeometry.xy, 0, 1)
     this.material.fragmentNode = new CloudsResolveColorNode(this)
     this.material.needsUpdate = true
     this.mesh = new QuadMesh(this.material)
@@ -593,7 +593,6 @@ export class CloudsResolveNode extends TempNode {
     this.resolveTarget.dispose()
     this.historyTarget.dispose()
     this.material.dispose()
-    this.mesh.geometry.dispose()
     super.dispose()
   }
 }

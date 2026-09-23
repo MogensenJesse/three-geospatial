@@ -1,7 +1,7 @@
 // @ts-nocheck — Three r186 TSL typings are incomplete for this module; revisit.
 // src/webgpu/temporalResolve.ts
 
-import { float, max, min, sqrt, vec3, vec4 } from 'three/tsl'
+import { float, max, min, sqrt, vec4 } from 'three/tsl'
 
 import type { Node } from './internal/node'
 
@@ -30,116 +30,115 @@ export function clipAABB(
     .select(vec4(center, current.a).add(delta.div(maximum)), history)
 }
 
+/** 3×3 neighbourhood, center included. */
+export const closestOffsets: readonly TexelOffset[] = [
+  [-1, -1],
+  [-1, 0],
+  [-1, 1],
+  [0, -1],
+  [0, 0],
+  [0, 1],
+  [1, -1],
+  [1, 0],
+  [1, 1]
+]
+
+/** Same 3×3 without the center. The cloud resolve loads that texel itself. */
+export const closestNeighbourOffsets: readonly TexelOffset[] =
+  closestOffsets.filter(([x, y]) => x !== 0 || y !== 0)
+
 export interface VarianceClipOptions {
   offsets: readonly TexelOffset[]
   sampleNeighbor: (x: number, y: number) => Vec4
   current: Vec4
   history: Vec4
   gamma: FloatNode
-  /**
-   * Build the clip box on rgba. Default off: rgb box, alpha copied from the
-   * neighbourhood mean (shadow resolve).
-   */
-  clipAlpha?: boolean
-  /**
-   * Half-extent floor used when `clipAlpha` is set, so a flat channel (opaque
-   * cloud alpha) does not clip on noise. Called with the neighbourhood mean.
-   */
-  minExtent?: (mean: Vec4) => Vec4
 }
 
-export interface VarianceClipResult {
+interface NeighbourhoodBox {
+  mean: Vec4
+  minColor: Vec4
+  maxColor: Vec4
+}
+
+/** Mean and gamma-scaled variance box of `current` plus `offsets`. */
+function neighbourhoodBox(options: {
+  offsets: readonly TexelOffset[]
+  sampleNeighbor: (x: number, y: number) => Vec4
+  current: Vec4
+  gamma: FloatNode
+}): NeighbourhoodBox {
+  const { offsets, sampleNeighbor, current, gamma } = options
+  const moment1 = current.toVar()
+  const moment2 = current.pow2().toVar()
+  for (const [x, y] of offsets) {
+    const neighbor = sampleNeighbor(x, y).toConst()
+    moment1.addAssign(neighbor)
+    moment2.addAssign(neighbor.pow2())
+  }
+  const sampleCount = offsets.length + 1
+  const mean = moment1.div(sampleCount).toConst()
+  const deviation = sqrt(moment2.div(sampleCount).sub(mean.pow2()).max(0))
+    .mul(gamma)
+    .toConst()
+  return {
+    mean,
+    minColor: mean.sub(deviation).toConst(),
+    maxColor: mean.add(deviation).toConst()
+  }
+}
+
+/**
+ * Rgb variance clip. The caller owns the offset table and the sample op.
+ * Shadows pass an 8-neighbour box and unclamped loads. Alpha is copied from
+ * the neighbourhood mean.
+ */
+export function varianceClip(options: VarianceClipOptions): Vec4 {
+  const { mean, minColor, maxColor } = neighbourhoodBox(options)
+  return clipAABB(
+    mean.clamp(minColor, maxColor),
+    options.history,
+    minColor,
+    maxColor
+  )
+}
+
+export interface CloudVarianceClipResult {
   color: Vec4
-  /** max(0, clipScale - 1). 0 means history was already inside the box. */
-  clipAmount: FloatNode
   mean: Vec4
 }
 
 /**
- * Variance-clip `history` against `current` plus the neighbours `sampleNeighbor`
- * returns. The offset table and the sample op stay with the caller: clouds use
- * a 4-neighbour cross (clamped UV or load), shadows use an 8-neighbour box
- * (unclamped load).
- *
- * Without `clipAlpha` this is the original rgb clip, which the shadow resolve
- * depends on.
+ * Cloud clip. Rgb uses {@link clipAABB}. Alpha is projected on its own so a
+ * jittering low-res alpha cannot rescale stable rgb. `alphaExtentFloor` keeps
+ * a flat opaque neighbourhood from clipping on noise.
  */
-export function varianceClip(options: VarianceClipOptions): Vec4 {
-  if (options.clipAlpha === true) {
-    return varianceClipEx(options).color
-  }
-  const { offsets, sampleNeighbor, current, history, gamma } = options
-  const moment1 = current.toVar()
-  const moment2 = current.pow2().toVar()
-  for (const [x, y] of offsets) {
-    const neighbor = sampleNeighbor(x, y).toConst()
-    moment1.addAssign(neighbor)
-    moment2.addAssign(neighbor.pow2())
-  }
-  const sampleCount = offsets.length + 1
-  const mean = moment1.div(sampleCount).toConst()
-  const deviation = sqrt(moment2.div(sampleCount).sub(mean.pow2()).max(0))
-    .mul(gamma)
-    .toConst()
-  const minColor = mean.sub(deviation).toConst()
-  const maxColor = mean.add(deviation).toConst()
-  return clipAABB(mean.clamp(minColor, maxColor), history, minColor, maxColor)
-}
-
-/** Same neighbourhood as {@link varianceClip}, plus how hard the clip was. */
-export function varianceClipEx(options: VarianceClipOptions): VarianceClipResult {
-  const { offsets, sampleNeighbor, current, history, gamma } = options
-  const moment1 = current.toVar()
-  const moment2 = current.pow2().toVar()
-  for (const [x, y] of offsets) {
-    const neighbor = sampleNeighbor(x, y).toConst()
-    moment1.addAssign(neighbor)
-    moment2.addAssign(neighbor.pow2())
-  }
-  const sampleCount = offsets.length + 1
-  const mean = moment1.div(sampleCount).toConst()
-  const deviation = sqrt(moment2.div(sampleCount).sub(mean.pow2()).max(0))
-    .mul(gamma)
-    .toConst()
-  const minColor = mean.sub(deviation).toConst()
-  const maxColor = mean.add(deviation).toConst()
-  const clampedMean = mean.clamp(minColor, maxColor).toConst()
-  if (options.clipAlpha !== true) {
-    return {
-      color: clipAABB(clampedMean, history, minColor, maxColor),
-      clipAmount: float(0),
-      mean
-    }
-  }
-  // Rgb stays on the original clip. A 4D box lets a jittering low-res alpha
-  // rescale stable rgb and brings the still-camera grain back.
-  const rgbClipped = clipAABB(clampedMean, history, minColor, maxColor)
-  const floorExtent = options.minExtent?.(mean) ?? vec4(1e-7)
+export function cloudVarianceClip(options: {
+  offsets: readonly TexelOffset[]
+  sampleNeighbor: (x: number, y: number) => Vec4
+  current: Vec4
+  history: Vec4
+  gamma: FloatNode
+  alphaExtentFloor: number
+}): CloudVarianceClipResult {
+  const { mean, minColor, maxColor } = neighbourhoodBox(options)
+  const rgbClipped = clipAABB(
+    mean.clamp(minColor, maxColor),
+    options.history,
+    minColor,
+    maxColor
+  )
   const centerA = maxColor.a.add(minColor.a).mul(0.5).toConst()
   const extentA = max(
     maxColor.a.sub(minColor.a).mul(0.5),
-    floorExtent.a
+    float(options.alphaExtentFloor)
   ).toConst()
   const deltaA = rgbClipped.a.sub(centerA).toConst()
   const unitA = deltaA.abs().div(extentA).toConst()
-  // Confidence only. The colour clip above stays on the original tight box.
-  // A 2% floor keeps low-res noise from capping N across a cloud body.
-  // Read the mean through a new vec3; swizzle methods can write back into it.
-  const rgbCenter = maxColor.rgb.add(minColor.rgb).mul(0.5).toConst()
-  const rgbHalf = maxColor.rgb.sub(minColor.rgb).mul(0.5).toConst()
-  const rgbExtent = max(
-    rgbHalf,
-    vec3(mean.r, mean.g, mean.b).mul(0.02)
-  )
-    .add(1e-7)
-    .toConst()
-  const rgbUnit = history.rgb.sub(rgbCenter).div(rgbExtent).abs().toConst()
-  const rgbClip = max(rgbUnit.x, max(rgbUnit.y, rgbUnit.z)).sub(1).max(0)
   return {
     color: unitA
       .greaterThan(1)
       .select(vec4(rgbClipped.rgb, centerA.add(deltaA.div(unitA))), rgbClipped),
-    clipAmount: max(rgbClip, unitA.sub(1).max(0)),
     mean
   }
 }
@@ -169,8 +168,7 @@ export function closestDepthVelocityRange(options: {
 
 /**
  * Closest fragment in an offset neighbourhood. `initial` is the starting
- * candidate (a sentinel for clouds, the center texel for shadows). The sample
- * callback owns clamping.
+ * candidate (the center texel for shadows). The sample callback owns clamping.
  */
 export function closestDepthVelocity(options: {
   offsets: readonly TexelOffset[]

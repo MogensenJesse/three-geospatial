@@ -310,6 +310,7 @@ export function bindCloudControls(deps: CloudControlsDeps): {
   const updateMultiScatter = (): void => {
     const octaves = Number(multiScatterInput.value)
     cloudNode.marchNode.march.multiScatteringOctaves.value = octaves
+    cloudNode.marchNode.invalidateMaterial()
     multiScatterOutput.value = String(octaves)
     cloudNode.resetTemporalHistory()
   }

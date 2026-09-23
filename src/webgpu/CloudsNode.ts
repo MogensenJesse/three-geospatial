@@ -110,7 +110,8 @@ export class CloudsNode extends TempNode {
     this.marchNode.shadowAtlas = this.shadowNode.getAtlasNode()
     this.resolveNode = new CloudsResolveNode(
       this.marchNode.getTextureNode(),
-      this.marchNode.getVelocityTextureNode()
+      this.marchNode.getVelocityTextureNode(),
+      this.marchNode.march.cameraFar
     )
     this.marchNode.temporalUpscale = this.resolveNode.temporalUpscale
     this.textureNode = this.resolveNode.getTextureNode()
@@ -468,6 +469,7 @@ export class CloudsNode extends TempNode {
 
   set secondaryIterationCount(value: number) {
     this.marchNode.march.maxIterationCountToSun.value = value
+    this.marchNode.invalidateMaterial()
   }
 
   get skyLightScale(): number {
@@ -492,6 +494,7 @@ export class CloudsNode extends TempNode {
 
   set powderScale(value: number) {
     this.marchNode.march.powderScale.value = value
+    this.marchNode.invalidateMaterial()
   }
 
   get powderExponent(): number {
@@ -508,6 +511,7 @@ export class CloudsNode extends TempNode {
 
   set groundBounceScale(value: number) {
     this.marchNode.march.groundBounceScale.value = value
+    this.marchNode.invalidateMaterial()
   }
 
   get groundIterationCount(): number {
@@ -516,6 +520,7 @@ export class CloudsNode extends TempNode {
 
   set groundIterationCount(value: number) {
     this.marchNode.march.maxIterationCountToGround.value = value
+    this.marchNode.invalidateMaterial()
   }
 
   get phaseFunctionMode(): PhaseFunctionMode {
@@ -526,6 +531,7 @@ export class CloudsNode extends TempNode {
 
   set phaseFunctionMode(value: PhaseFunctionMode) {
     this.marchNode.march.phaseFunctionMode.value = value === 'accurate' ? 1 : 0
+    this.marchNode.invalidateMaterial()
   }
 
   get scatterAnisotropy1(): number {
@@ -573,7 +579,10 @@ export class CloudsNode extends TempNode {
     const previous = this.shadowNode.shadowMaps.mapSize.x
     this.shadowNode.setMapSize(value)
     if (value !== previous) {
-      this.shadowNode.rebindConsumers(this)
+      this.shadowNode.rebindConsumers(
+        this,
+        this.shadowEnabled ? this.shadowNode.getAtlasNode() : null
+      )
     }
   }
 
@@ -585,7 +594,10 @@ export class CloudsNode extends TempNode {
     const previous = this.shadowNode.shadowMaps.cascadeCount
     this.shadowNode.setCascadeCount(value)
     if (value !== previous) {
-      this.shadowNode.rebindConsumers(this)
+      this.shadowNode.rebindConsumers(
+        this,
+        this.shadowEnabled ? this.shadowNode.getAtlasNode() : null
+      )
     }
   }
 
@@ -705,6 +717,7 @@ export class CloudsNode extends TempNode {
       debugOutputChangesMarch(value)
     this._debugOutput = value
     this.applyDebugMarchMode()
+    this.marchNode.invalidateMaterial()
     if (marchOutputChanged) this.resetTemporalHistory()
     // setup() return value changed — force the pipeline to rebuild this node.
     ;(this as { needsUpdate?: boolean }).needsUpdate = true
@@ -799,7 +812,6 @@ export class CloudsNode extends TempNode {
         },
         resolve: () => {
           this.resolveNode.setSize(this.outputSize.x, this.outputSize.y)
-          this.resolveNode.cameraFar.value = this.marchNode.march.cameraFar.value
           this.resolveNode.render(frame)
           this.marchNode.commitReprojection(frame)
         }

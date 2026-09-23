@@ -62,7 +62,7 @@ export function applyDebugMarchMode(
       march.shadowDebugOpticalDepth.value = -4
       break
     case 'no-shadow':
-      // -5 is unshadowed lighting (optical depth 0), not the -2 false-color probe.
+      // -5 is unshadowed lighting (optical depth forced to 0).
       march.shadowDebugOpticalDepth.value = -5
       break
     default:

@@ -409,6 +409,8 @@ async function main(): Promise<void> {
   }
 
   const frameGate: DemoFrameGate = { allowRender: null, afterRender: null }
+  ;(window as Window & { cloudNode?: typeof cloudNode }).cloudNode = cloudNode
+
   installStabilityProbe(frameGate, {
     renderer,
     getOutputTarget: () => cloudNode.resolveNode.outputTarget,

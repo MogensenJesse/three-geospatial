@@ -179,6 +179,9 @@ export class ShadowMarchNode extends TempNode {
     for (const target of this.renderTargets) {
       target.dispose()
     }
+    for (const material of this.materials) {
+      material.dispose()
+    }
     this.renderTargets = []
     this.textureNodes.length = 0
     this.velocityNodes.length = 0

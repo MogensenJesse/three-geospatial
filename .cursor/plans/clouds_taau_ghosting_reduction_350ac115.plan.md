@@ -128,18 +128,17 @@ Not built. Interior weather smear is acceptable. The design, if it is picked up 
 
 ### Phase 4: Confidence blend (done)
 
-- `alpha = max(a * w, w / max(N + w, 1e-4))` with `Nmax = 1 / a`. `a` is `temporalUpscaleAlpha`, or `temporalAlpha` with `w = 1` on the full-res branch.
+- `alpha = max(a * w, w / max(N + w, 1e-8))` with `Nmax = 1 / a`. `a` is `temporalUpscaleAlpha`, or `temporalAlpha` with `w = 1` on the full-res branch.
 - Off-screen reprojection: `N = 0`.
 - Depth reject, only when `motion > 0.02`: history depth outside `[min / (1+tau), max * (1+tau)]` of the 3×3 view-depth range, `tau = depthRejectTolerance` (default 1). Effect: `gamma = varianceGammaReject` (default 1) and `N = min(N, rejectConfidence)` (default 1).
-- Clip event: `N = mix(N, min(N, clipConfidenceCap), smoothstep(0, 1, clipAmount) * motion)` with `clipConfidenceCap` default 1.
 - Motion: `N = min(N, mix(Nmax, motionConfidenceFloor, motion))`. Floor 0 replaces the old hard cut.
 - Low confidence: `recon' = mix(neighbourhoodMean, recon, saturate(N / fallbackConfidence))`, `fallbackConfidence` 1.
-- `varianceGammaStatic` (default 2), `depthRejectTolerance`, `varianceGammaReject`, `rejectConfidence`, and `clipConfidenceCap` are resolve uniforms. The first two are on `CloudsOptions` / `CloudsNode`. `varianceGammaStatic` stayed at 2.
+- `varianceGammaStatic` (default 2), `depthRejectTolerance`, `varianceGammaReject`, and `rejectConfidence` are resolve uniforms. The first two are on `CloudsOptions` / `CloudsNode`. `varianceGammaStatic` stayed at 2. The clip-confidence cap was removed after a runtime A/B showed no difference.
 - Signed-off still-camera probe on this view: mean **0.00127**, max **0.211**. Sky-edge smear was accepted. Pillar rims are the 4–8 px band the 3×3 cannot reject.
 
 ### Phase 5: Sign-off (done)
 
-- Full-res TAA uses the same confidence, depth reject, clip cap, and mean fallback, with `w = 1`, `a = temporalAlpha`, the 4-neighbour cross, and `gamma = 1` unless the depth test tightens it.
+- Full-res TAA uses the same confidence, depth reject, and mean fallback, with `w = 1`, `a = temporalAlpha`, the 4-neighbour cross, and `gamma = 1` unless the depth test tightens it.
 - `motionConfidenceFloor` stays 0. `varianceGammaStatic` stays 2.
 - JSDoc on both temporal alphas says they also set `Nmax = 1 / alpha`. Quality presets do not override those defaults.
 - `detect_changes({scope: "compare", base_ref: "main"})` returned `truncated: true` (the branch is far from `main`). That is not a clean check. `detect_changes({scope: "all"})` on the uncommitted cloud diff completed and rated it critical because it touches `CloudsNode` and the march. The shadow resolve is not in that diff.
@@ -152,8 +151,8 @@ Shared with `ShadowResolveNode`. Shadow defaults are unchanged.
 
 - `clipAABB` is the original RGB box.
 - `varianceClip` is that box. Shadows call it.
-- `varianceClipEx` is the cloud path: RGB clip, then an alpha-only clamp. `clipAmount` is the max of the alpha overflow and the RGB overflow measured with a 2% mean floor. It also returns `mean`.
-- `closestDepthVelocityRange` returns the closest sample plus min and max of `.r`.
+- `cloudVarianceClip` is the cloud path: RGB clip, then an alpha-only clamp. It also returns `mean`.
+- `closestDepthVelocityRange` returns the closest sample plus min and max of `.r`. The center texel is passed in. `closestOffsets` is the shared 3×3; clouds walk the copy that omits the center.
 
 ### `src/webgpu/CloudsResolveNode.ts`
 
@@ -178,9 +177,9 @@ After the hit-branch reprojection, cloud hits store `frontDepth * max(dot(rayDir
 - `varianceGamma` 2, `varianceGammaStatic` 2. Still TAAU pixels use gamma 4. Full-res uses gamma 1.
 - `varianceGammaReject` 1.
 - `depthRejectTolerance` 1, and only while `motion > 0.02`.
-- `rejectConfidence` 1. `clipConfidenceCap` 1, scaled by motion.
+- `rejectConfidence` 1.
 - `fallbackConfidence` 1. `motionConfidenceFloor` 0.
-- Alpha extent floor 1/64. RGB confidence floor 2% of the mean.
+- Alpha extent floor 1/64.
 
 ## Verification
 

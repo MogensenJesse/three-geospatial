@@ -1,7 +1,6 @@
 // demo/stabilityProbe.ts
-// Demo-only temporal-stability probe. Reads a centred crop of the resolved
-// cloud buffer and reports mean |Δ luminance| between consecutive frames.
-// Later ghosting phases must match a static-camera run of this within noise.
+// Demo-only still-camera probe. Reads a centred crop of the resolved cloud
+// buffer and reports mean |Δ luminance| between consecutive frames.
 
 import type { RenderTarget, WebGPURenderer } from 'three/webgpu'
 

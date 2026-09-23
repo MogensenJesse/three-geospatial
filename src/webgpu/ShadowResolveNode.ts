@@ -12,7 +12,6 @@ import {
 import {
   ivec2,
   mix,
-  positionGeometry,
   screenCoordinate,
   screenUV,
   texture,
@@ -32,7 +31,7 @@ import {
 
 import type { Node } from './internal/node'
 import { outputTexture } from './internal/OutputTextureNode'
-import { closestDepthVelocity, varianceClip } from './temporalResolve'
+import { closestDepthVelocity, closestOffsets, varianceClip } from './temporalResolve'
 
 const { resetRendererState, restoreRendererState } = RendererUtils
 
@@ -47,20 +46,8 @@ const varianceOffsets: Array<readonly [number, number]> = [
   [-1, 0]
 ]
 
-const closestOffsets: Array<readonly [number, number]> = [
-  [-1, -1],
-  [-1, 0],
-  [-1, 1],
-  [0, -1],
-  [0, 0],
-  [0, 1],
-  [1, -1],
-  [1, 0],
-  [1, 1]
-]
-
 // Reference: https://github.com/playdeadgames/temporal
-// 8-neighbour box (+ current = 9), unclamped loads. Clouds use a 5-tap cross.
+// 8-neighbour box (+ current = 9), unclamped loads.
 
 /** Per-cascade resolve state. One material per cascade avoids select chains. */
 class CascadeResolve {
@@ -79,7 +66,6 @@ class CascadeResolve {
     texelSize: Node<'vec2'>
   ) {
     this.material.name = 'CloudsShadowResolve'
-    this.material.vertexNode = vec4(positionGeometry.xy, 0, 1)
     this.material.fragmentNode = new ShadowResolveColorNode(
       inputNode,
       velocityNode,
@@ -279,7 +265,6 @@ export class ShadowResolveNode extends TempNode {
       cascade.resolveTarget.dispose()
       cascade.historyTarget.dispose()
       cascade.material.dispose()
-      cascade.mesh.geometry.dispose()
     }
     super.dispose()
   }

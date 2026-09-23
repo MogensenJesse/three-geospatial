@@ -6,7 +6,14 @@ import type { TextureNode } from 'three/webgpu'
 import { MAX_MULTI_SCATTERING_OCTAVES } from '../qualityPresets'
 import type { CloudsMarchParameters } from './march'
 
-/** Axes that drop substantial WGSL when false / -1. Keep ≤ ~6 live combos. */
+/** Axes that drop substantial WGSL when false. Debug modes compile only when selected. */
+export type CloudsMarchDebugMode =
+  | 'off'
+  | 'local'
+  | 'bsm'
+  | 'unshadowed'
+  | 'forced'
+
 export interface CloudsMarchVariant {
   shadows: boolean
   localSun: boolean
@@ -15,6 +22,18 @@ export interface CloudsMarchVariant {
   phaseAccurate: boolean
   /** Exact MS loop trip count (replaces Loop(8)+Break). */
   multiScatteringOctaves: number
+  /**
+   * Optical-depth debug view. `off` is the beauty shader and omits those branches.
+   */
+  debug: CloudsMarchDebugMode
+}
+
+function marchDebugMode(value: number): CloudsMarchDebugMode {
+  if (value === -3) return 'local'
+  if (value === -4) return 'bsm'
+  if (value === -5) return 'unshadowed'
+  if (value >= 0) return 'forced'
+  return 'off'
 }
 
 export function resolveCloudsMarchVariant(
@@ -39,7 +58,8 @@ export function resolveCloudsMarchVariant(
       Number(march.maxIterationCountToGround.value) > 0,
     powder: Number(march.powderScale.value) > 0,
     phaseAccurate: Number(march.phaseFunctionMode.value) === 1,
-    multiScatteringOctaves: octaves
+    multiScatteringOctaves: octaves,
+    debug: marchDebugMode(Number(march.shadowDebugOpticalDepth.value))
   }
 }
 
@@ -51,6 +71,7 @@ export function cloudsMarchVariantKey(v: CloudsMarchVariant): string {
     v.groundBounce ? 'g1' : 'g0',
     v.powder ? 'p1' : 'p0',
     v.phaseAccurate ? 'ph1' : 'ph0',
-    `o${v.multiScatteringOctaves}`
+    `o${v.multiScatteringOctaves}`,
+    `d${v.debug}`
   ].join('_')
 }
