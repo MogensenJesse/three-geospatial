@@ -109,18 +109,30 @@ Visual priority, from the orbit and weather passes:
 2. Objects passing in front of clouds. Same class of stale history, and the one the depth test has to get right. Cloud `frontDepth` is a ray distance and scene depth is view-Z, so Phase 4 must compare them in one space or this case will not reject.
 3. Interior smear with `?weather=1` is acceptable. Wind reprojection (Phase 2) stays in the plan but is not the first thing to judge.
 
+Phase 1 measurements, no-flags probe (history on, temporal upscaling):
+
+| Step | Mean \|Δ luminance\| | Max |
+| --- | --- | --- |
+| Phase 0 | 0.000204 | 0.154 |
+| Catmull-Rom + 4D alpha clip | 0.001295 | 0.257 |
+| Bilinear + 4D alpha clip | 0.001286 | 0.202 |
+| Bilinear + alpha-only clamp | 0.001292 | 0.208 |
+
+| Original clip restored | 0.001157 | 0.235 |
+
+The original clip measures the same as the alpha clip, so 0.000204 and ~0.0012 are not the same test. The center crop dominates the probe. Ghosting was visibly worse without the alpha clamp, and the higher probe number was not visible jitter. The cloud resolve opts back into alpha-only clamping. Catmull-Rom stays out. Do not fail a later phase for missing 0.000204. Compare against ~0.0012 on this view, and judge trails by eye.
+
 ### Phase 1: Shared helpers and drop-in fixes (Changes §1, part of §4)
 
 - `temporalResolve.ts` additions, all defaulting to today's behaviour so `ShadowResolveNode` is unaffected:
   - A `clipAlpha` flag with an extent floor.
   - `clipAmount` in the return value.
   - `closestDepthVelocityRange`.
-  - `sampleCatmullRom`, with rgb clamped to ≥ 0 and alpha saturated.
-- `CloudsResolveNode.ts`: opt in to `clipAlpha` and Catmull-Rom in both branches. Blend formula and targets stay as they are.
+- `CloudsResolveNode.ts`: opt in to `clipAlpha` in both branches. History stays bilinear. Catmull-Rom was tried and removed: under temporal upscaling the Bayer jitter leaves history off texel centres, and the negative lobes raised the static probe from 0.000204 to 0.001295 and added blur plus halos while rotating.
 - Checkpoint:
-  - Static-camera probe identical to baseline (Catmull-Rom is a no-op at texel centres, and the alpha floor prevents interior clips).
-  - Less blur in slow orbits.
-  - No bright or dark rings around sun-lit cloud edges against sky. If rings appear, the clamp or the box is failing; do not proceed.
+  - Static-camera probe back near 0.000204.
+  - Sky-edge trails still shorter than Phase 0 (that was the alpha clip).
+  - No new halo while rotating.
 
 ### Phase 2: Rigid wind and wind-aware reprojection (Changes §3)
 

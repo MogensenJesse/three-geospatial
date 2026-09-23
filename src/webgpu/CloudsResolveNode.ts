@@ -14,8 +14,8 @@ import {
   Fn,
   float,
   If,
+  int,
   ivec2,
-  max,
   mix,
   positionGeometry,
   screenCoordinate,
@@ -44,7 +44,6 @@ import { outputTexture } from './internal/OutputTextureNode'
 import {
   closestDepthVelocity,
   motionFactor,
-  sampleCatmullRom,
   varianceClip
 } from './temporalResolve'
 
@@ -86,30 +85,11 @@ const upscaleVarianceOffsets: Array<readonly [number, number]> = [
 const TEMPORAL_UPSCALE_SIGMA = 0.55
 /** Still pixels use varianceGamma * this, so a noisy low-res box does not clip history. */
 const TEMPORAL_UPSCALE_STATIC_GAMMA = 2
-/** Alpha half-extent floor so flat opaque clouds do not clip on noise. */
+/** Alpha half-extent floor. Only alpha is clamped; rgb stays on the original box. */
 const HISTORY_ALPHA_EXTENT_FLOOR = 1 / 64
-/** Rgb half-extent floor, relative to the neighbourhood mean. */
-const HISTORY_RGB_EXTENT_RELATIVE = 0.02
 
-function sampleCloudHistory(
-  historyNode: TextureNode,
-  prevUv: Node<'vec2'>
-): Node<'vec4'> {
-  return sampleCatmullRom(
-    historyNode,
-    prevUv,
-    vec2(textureSize(historyNode)).reciprocal()
-  )
-}
-
-function cloudHistoryExtent(mean: Node<'vec4'>): Node<'vec4'> {
-  const floor = float(1e-7)
-  return vec4(
-    max(mean.r.mul(HISTORY_RGB_EXTENT_RELATIVE), floor),
-    max(mean.g.mul(HISTORY_RGB_EXTENT_RELATIVE), floor),
-    max(mean.b.mul(HISTORY_RGB_EXTENT_RELATIVE), floor),
-    float(HISTORY_ALPHA_EXTENT_FLOOR)
-  )
+function cloudHistoryExtent(): Node<'vec4'> {
+  return vec4(0, 0, 0, float(HISTORY_ALPHA_EXTENT_FLOOR))
 }
 
 function sampleClosestCloudVelocity(
@@ -174,7 +154,7 @@ class CloudsResolveColorNode extends TempNode {
           .all()
           .and(prevUv.lessThanEqual(1).all())
 
-        const historyReproj = sampleCloudHistory(owner.historyNode, prevUv)
+        const historyReproj = texture(owner.historyNode, prevUv, int(0))
         // 3x3 around the reconstruction sample (+ center = 9). Still pixels
         // widen the box; motion falls back to varianceGamma.
         const motion = motionFactor(closest.gb)
@@ -218,7 +198,7 @@ class CloudsResolveColorNode extends TempNode {
           .all()
           .and(prevUv.lessThanEqual(1).all())
 
-        const history = sampleCloudHistory(owner.historyNode, prevUv)
+        const history = texture(owner.historyNode, prevUv, int(0))
         const maxCoord = ivec2(textureSize(owner.inputNode)).sub(1).toConst()
         const clipped = varianceClip({
           offsets: varianceOffsets,

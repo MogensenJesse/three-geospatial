@@ -1,8 +1,7 @@
 // @ts-nocheck — Three r186 TSL typings are incomplete for this module; revisit.
 // src/webgpu/temporalResolve.ts
 
-import { float, int, max, min, sqrt, texture, vec2, vec4 } from 'three/tsl'
-import type { TextureNode } from 'three/webgpu'
+import { float, max, min, sqrt, vec4 } from 'three/tsl'
 
 import type { Node } from './internal/node'
 
@@ -112,18 +111,22 @@ export function varianceClipEx(options: VarianceClipOptions): VarianceClipResult
       mean
     }
   }
-  const center = maxColor.add(minColor).mul(0.5).toConst()
-  const halfExtent = maxColor.sub(minColor).mul(0.5)
+  // Rgb stays on the original clip. A 4D box lets a jittering low-res alpha
+  // rescale stable rgb and brings the still-camera grain back.
+  const rgbClipped = clipAABB(clampedMean, history, minColor, maxColor)
   const floorExtent = options.minExtent?.(mean) ?? vec4(1e-7)
-  const extent = max(halfExtent, floorExtent).toConst()
-  const delta = history.sub(center).toConst()
-  const unit = delta.div(extent).abs().toConst()
-  const maximum = max(unit.x, max(unit.y, max(unit.z, unit.w))).toConst()
+  const centerA = maxColor.a.add(minColor.a).mul(0.5).toConst()
+  const extentA = max(
+    maxColor.a.sub(minColor.a).mul(0.5),
+    floorExtent.a
+  ).toConst()
+  const deltaA = rgbClipped.a.sub(centerA).toConst()
+  const unitA = deltaA.abs().div(extentA).toConst()
   return {
-    color: maximum
+    color: unitA
       .greaterThan(1)
-      .select(center.add(delta.div(maximum)), history),
-    clipAmount: maximum.sub(1).max(0),
+      .select(vec4(rgbClipped.rgb, centerA.add(deltaA.div(unitA))), rgbClipped),
+    clipAmount: unitA.sub(1).max(0),
     mean
   }
 }
@@ -148,49 +151,6 @@ export function closestDepthVelocityRange(options: {
     maxDepth.assign(max(maxDepth, neighbor.r))
   }
   return { closest, minDepth, maxDepth }
-}
-
-/**
- * 5-tap Catmull-Rom history fetch (Jimenez). At a texel centre only the centre
- * tap survives, so a static camera matches bilinear. Negative lobes are clamped
- * away: rgb ≥ 0, alpha in 0..1.
- */
-export function sampleCatmullRom(
-  textureNode: TextureNode,
-  uv: Node<'vec2'>,
-  texelSize: Node<'vec2'>
-): Vec4 {
-  const samplePos = uv.div(texelSize).toConst()
-  const texPos1 = samplePos.sub(0.5).floor().add(0.5).toConst()
-  const f = samplePos.sub(texPos1).toConst()
-  const w0 = f
-    .mul(float(-0.5).add(f.mul(float(1).sub(f.mul(0.5)))))
-    .toConst()
-  const w1 = float(1)
-    .add(f.mul(f).mul(float(-2.5).add(f.mul(1.5))))
-    .toConst()
-  const w2 = f
-    .mul(float(0.5).add(f.mul(float(2).sub(f.mul(1.5)))))
-    .toConst()
-  const w3 = f
-    .mul(f)
-    .mul(float(-0.5).add(f.mul(0.5)))
-    .toConst()
-  const w12 = w1.add(w2).toConst()
-  const offset12 = w2.div(w12).toConst()
-  const texPos0 = texPos1.sub(1).mul(texelSize).toConst()
-  const texPos3 = texPos1.add(2).mul(texelSize).toConst()
-  const texPos12 = texPos1.add(offset12).mul(texelSize).toConst()
-  const at = (x: Node<'float'>, y: Node<'float'>): Vec4 =>
-    texture(textureNode, vec2(x, y), int(0))
-  const result = at(texPos12.x, texPos0.y)
-    .mul(w12.x.mul(w0.y))
-    .add(at(texPos0.x, texPos12.y).mul(w0.x.mul(w12.y)))
-    .add(at(texPos12.x, texPos12.y).mul(w12.x.mul(w12.y)))
-    .add(at(texPos3.x, texPos12.y).mul(w3.x.mul(w12.y)))
-    .add(at(texPos12.x, texPos3.y).mul(w12.x.mul(w3.y)))
-    .toConst()
-  return vec4(result.rgb.max(0), result.a.clamp(0, 1))
 }
 
 /**
