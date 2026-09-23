@@ -311,6 +311,14 @@ export class CloudsResolveNode extends TempNode {
     return this.textureNode
   }
 
+  /**
+   * Resolved colour target after {@link render} (the ping-pong buffer just
+   * written). Demo readback only; the public image is {@link getTextureNode}.
+   */
+  get outputTarget(): RenderTarget {
+    return this.historyTarget
+  }
+
   setSize(width: number, height: number): this {
     const { outputWidth, outputHeight } = computeCloudsSizes(
       width,

@@ -44,6 +44,10 @@ import {
   createPassTimingEma,
   formatPassStats
 } from './passStats'
+import {
+  type DemoFrameGate,
+  installStabilityProbe
+} from './stabilityProbe'
 import './styles.css'
 
 interface DemoRenderPipeline {
@@ -382,6 +386,54 @@ async function main(): Promise<void> {
     updateTemporalHistory
   })
 
+  const params = new URLSearchParams(location.search)
+  const autorotate = params.get('autorotate')
+  if (autorotate != null) {
+    controls.autoRotate = true
+    const speed = Number(autorotate)
+    if (autorotate !== '' && Number.isFinite(speed) && speed > 0) {
+      controls.autoRotateSpeed = speed
+    }
+  }
+  if (params.get('weather') === '1') {
+    animateWeatherInput.checked = true
+    animateWeatherInput.dispatchEvent(new Event('change'))
+  }
+  if (params.get('history') === '0') {
+    temporalHistoryInput.checked = false
+    temporalHistoryInput.dispatchEvent(new Event('change'))
+  }
+  if (params.get('upscale') === '0') {
+    temporalUpscaleInput.checked = false
+    temporalUpscaleInput.dispatchEvent(new Event('change'))
+  }
+
+  const frameGate: DemoFrameGate = { allowRender: null, afterRender: null }
+  installStabilityProbe(frameGate, {
+    renderer,
+    getOutputTarget: () => cloudNode.resolveNode.outputTarget,
+    assertStatic: () => {
+      if (controls.autoRotate) {
+        throw new Error(
+          'cloudsStability needs a static camera. Drop ?autorotate and stop orbiting.'
+        )
+      }
+      const moving =
+        cloudNode.localWeatherVelocity.lengthSq() > 0 ||
+        cloudNode.shapeVelocity.lengthSq() > 0 ||
+        cloudNode.shapeDetailVelocity.lengthSq() > 0
+      if (moving) {
+        throw new Error(
+          'cloudsStability needs static weather. Turn off Animate weather.'
+        )
+      }
+    },
+    getMode: () => ({
+      temporalHistory: cloudNode.temporalHistoryEnabled,
+      temporalUpscale: cloudNode.temporalUpscale
+    })
+  })
+
   const stats = new Stats()
   stats.showPanel(0)
   // Panel occupies top-left; keep the FPS widget visible on the right.
@@ -398,9 +450,13 @@ async function main(): Promise<void> {
   window.addEventListener('resize', resize)
 
   renderer.setAnimationLoop(() => {
+    if (frameGate.allowRender != null && !frameGate.allowRender()) {
+      return
+    }
     stats.begin()
     controls.update()
     renderPipeline.render()
+    frameGate.afterRender?.()
     if (showPassStats && !gpuResolveInFlight) {
       gpuResolveInFlight = true
       void renderer

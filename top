@@ -1,0 +1,137 @@
+[33m50520c1b[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mwebgpu/clouds-optimizations[m[33m)[m Clip cloud history alpha and resample it with Catmull-Rom.
+[33m74fa887c[m[33m ([m[1;31morigin/webgpu/clouds-optimizations[m[33m)[m Create clouds_taau_ghosting_reduction_350ac115.plan.md
+[33m12c7f0e0[m Sharpen the TAAU reconstruction without bringing rotation grain back.
+[33m64773937[m Align STBN with full-res during temporal upscaling
+[33m476fe5df[m Use 3x3 variance clipping for temporal upscaling (main grain fix)
+[33mbd4f9f32[m Reconstruct Bayer lattice for clouds temporal upscaling
+[33m73b75de6[m Update CloudsResolveNode.ts
+[33m0b9a2671[m demo: simplify irradiance controls, add demoArt
+[33m64211dfd[m Refactor clouds sizing, facade, and tuning
+[33mdd2a3ad9[m Refactor procedural storage & temporal resolve
+[33mfc12a2be[m Cleanup WebGPU clouds internals and defaults
+[33m6ac709ce[m[33m ([m[1;31morigin/cursor/fix-webgpu-cloud-bugs-ba06[m[33m)[m Fix confirmed WebGPU cloud rendering bugs
+[33md6e86edb[m Add STBN jitter freeze and 3D STBN loader
+[33mc85141a3[m Tune demo cloud lighting and ocean scene
+[33m07ff4403[m Default preethamBake irradiance for clouds
+[33m05d83a49[m[33m ([m[1;32mwebgpu/clouds[m[33m)[m Tune WebGPU cloud temporal parity
+[33ma9d0b998[m updated parity plan
+[33m2edaeb00[m Minor cleanup & added parity map
+[33m5482e2ff[m Extract CloudsNode tuning & split demo controls
+[33m787fc75e[m Add demo irradiance A/B and temporal-upscale fixes
+[33m3c83814a[m[33m ([m[1;31morigin/webgpu/clouds[m[33m)[m Bump deps to three@0.186 & adapt TSL/TS types
+[33md3e7a4bd[m Lower varianceGamma and improve jitter comments
+[33m4f189322[m Add cloud profiling and WGSL capture
+[33m335d63b1[m Refactor shadow sampling and pass diagnostics
+[33m9be1af6d[m Add WebGPU cloud quality and shadow tooling
+[33m43533869[m Massive refactor and simplification into a simple vite scaffold
+[33m9ed57622[m Add WebGPU clouds nodes and aerial overlay support
+[33m06b6b46d[m checkpoint before checking out main
+[33m88f7d0ed[m[33m ([m[1;31mupstream/webgpu/clouds[m[33m)[m Merge branch 'main' into webgpu/clouds
+[33m1c6ff754[m Merge pull request #106 from jamesx0416/cesium-ion-storybooks
+[33me41ef6f6[m Simplify conditionals, remove seemingly useless url workaround, rename to previous environment variable name
+[33m731f97a9[m Reapply the change in the correct location
+[33mf993bef9[m Revert "We can now safely have different parameters in a page"
+[33m498f5692[m Revert "Take night sky brightness into account"
+[33ma0cfdbf6[m Restore original 3D tiles storybook UI controls
+[33md554f7c0[m Add Cesium ion support to 3D tiles storybooks
+[33m295951ed[m Take night sky brightness into account
+[33mc8537a6a[m Output diffuseColor here
+[33md7a246ee[m Remove useless default exports
+[33m92e0fd6d[m Update changelog
+[33m0d40e4a5[m Add TODO
+[33m2ff4d4f3[m Merge branch 'webgpu/sky-environment-optimization'
+[33mc3c431cb[m Add thresholds to update PMREM
+[33m78c50132[m Add frame update event nodes
+[33m3869cc4d[m Add update event to LUT node
+[33mf718e6e8[m Fix camera matrices not being updated for sub cameras of CubeCamera (#105)
+[33m3ab4acf4[m Prefer chained select function
+[33mebfe95a2[m Update changelog
+[33m757e21bd[m Fix incorrect UV type
+[33mb2fd11ba[m Fix scene background
+[33mf7c21aba[m Fix unstable differential
+[33m7bfb0d03[m Capitalize struct names
+[33m010c13ab[m Add light-source lighting story for 3d-tiles-renderer integration
+[33m1abb1942[m Chore
+[33m90e2a269[m Merge branch 'webgpu/atmosphere-parameters-struct'
+[33m9d7db3c1[m Update changelog
+[33ma663017f[m Set const name
+[33md8620873[m We can now safely have different parameters in a page
+[33m8a12b11c[m Collect atmosphere parameter nodes into struct
+[33md40dec6d[m Update changelogs
+[33m38b4eb79[m Update three to r183
+[33m257b58b5[m Remove struct return type workaround, as they were already fixed
+[33mdbc47f1e[m Fix TS7 deprecation error
+[33mc7c06f9d[m Dispose compute node just in case
+[33mca3d039a[m Fix copyTextureToTexture error when higherOrderScatteringTexture is disabled
+[33m5de7b192[m Rename cosine terms for light angle
+[33me4bcf67a[m Chore
+[33m88a18a37[m Temporarily increase max zenith angle
+[33m68c0169f[m Address renaming of PostProcessing to RenderPipeline
+[33m7f495a9c[m Fix eslint errors
+[33m0ea75287[m Reduce LUT size
+[33m0a0d3b7b[m Merge branch 'webgpu/night-side'
+[33mdcdfed08[m Add Art002E000192 story
+[33mb49f4467[m Remove hash() and add update() for computed properties
+[33m84e7d06d[m Turn off moonScattering by default
+[33m4de08fb2[m Rename atmospheric functions because we use them for the moon as well
+[33mf2221ceb[m Add moonScattering option
+[33m27773caa[m Hide stars in PMREM
+[33m2dd059ee[m Prefer type names instead of instances to initialize uniform nodes
+[33m28bfa853[m Add support for moon light
+[33mf54b0aaf[m Prefer toConst over toVar if possible
+[33mbd977c56[m chore(release): publish
+[33m497d69ce[m Update dependencies and remove forced overrides that should be no longer needed
+[33m65f10eda[m Add API changes
+[33mf103221a[m Use arrows
+[33m4c227e93[m Add example codes
+[33m5ce0f3a9[m Write ScreenSpaceShadowNode section
+[33m507e54a9[m Write TemporalAntialiasNode section
+[33mf0f35f58[m Write LensFlareNode section
+[33m75849727[m Update changelog
+[33m7ee2e0e2[m Restore clamp and refactor
+[33mf7aa48b7[m Merge branch 'webgpu/moon-displacement'
+[33mec5b4eb6[m Add displacement textures
+[33maf1bf4d9[m Use displacement map instead of normal map
+[33m2d85bdd7[m Update moon albedo textures
+[33mb7737764[m Remove mat3Columns that is already supported
+[33ma0eda9e7[m Update changelog
+[33mf1d1c92a[m Back port subpixel correction from three.js
+[33m08c0d53b[m Prefer side-effect-free construction
+[33m60fe42d8[m Add deprecation
+[33m675795b4[m Remove velocityNodeImmutable argument from TAA to better align with addons
+[33mbee8b940[m Add other postprocess nodes
+[33m607115d9[m Replace deprecated Clock with Timer
+[33m6aae1014[m Switch to TAA from MSAA
+[33m933b7137[m Revert "Overwrite renderer's context by ContextNode's builtin function"
+[33mfbd74bcb[m Refine uniform type inference
+[33m0c8f5cd2[m Overwrite renderer's context by ContextNode's builtin function
+[33mfa886b1e[m Merge branch 'main' into webgpu/clouds
+[33mf8211e36[m Deprecate AtmosphereContextNode instead of removing it
+[33m02bf99f0[m Update changelog
+[33m2520038d[m More reliably exclude stars by checking degenerate normals instead
+[33m7ad87b87[m Exclude stars from applying irradiance
+[33m3e4d3d3e[m Draw front to back
+[33m9df93832[m Don't write depth for sky, and test depth both for sky and stars
+[33m4c4cdb1a[m Remove redundant prop
+[33me4825705[m Add stars in vanilla example
+[33m090e4dfd[m Apply the ideal rendering parameters
+[33macf1fc36[m Apply the same camera parameters to the WebGPU stories
+[33m9d499590[m (0, 0) is ambiguous
+[33m9c111a56[m Update changelog
+[33m359b329f[m Add comments
+[33m9d2b085f[m Update datetime and camera distance
+[33m2c5bf9d6[m Fix UV so that (0, 0) concides with the prime meridian
+[33mdaefb02a[m Update albedo texture
+[33mcfad31ac[m Add acknowledgement sections in WebGPU docs
+[33m8a3e0ca5[m Add issue templates
+[33m8e418696[m[33m ([m[1;33mtag: [m[1;33mclouds@0.7.3[m[33m)[m chore(release): publish
+[33mb7563ad7[m Fix duplicated log depth conversion
+[33mccea3a55[m Merge branch 'release'
+[33mc1939bc1[m[33m ([m[1;33mtag: [m[1;33meffects@0.6.1[m[33m, [m[1;33mtag: [m[1;33mcore@0.7.1[m[33m, [m[1;33mtag: [m[1;33mclouds@0.7.2[m[33m, [m[1;33mtag: [m[1;33matmosphere@0.17.1[m[33m)[m chore(release): publish
+[33m04e4d1a9[m Update changelogs
+[33m50b2821e[m Replace readDepth with custom function (#101)
+[33m9dc76c66[m Revert "Bump postprocessing peer range"
+[33m58fe5db8[m Revert "Fix duplicated logarithmic conversions for the readDepth changes"
+[33m02e2b4b9[m Update changelog
+[33mb9fdb34f[m Reduce the number of varyings that were redundant actually
+[33me585548a[m Update change
