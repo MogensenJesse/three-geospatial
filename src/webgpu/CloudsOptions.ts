@@ -41,6 +41,8 @@ export const cloudsFacadeFields = {
   temporalAlpha: opt<number>(),
   temporalHistoryEnabled: opt<boolean>(),
   varianceGamma: opt<number>(),
+  varianceGammaStatic: opt<number>(),
+  depthRejectTolerance: opt<number>(),
   secondaryIterationCount: opt<number>(),
   skyLightScale: opt<number>(),
   stepJitterScale: opt<number>(),

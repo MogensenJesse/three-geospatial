@@ -741,8 +741,16 @@ export function setupCloudsMarch(
       prevUv.assign(vec2(prevNdc.x, prevNdc.y.negate()).mul(0.5).add(0.5))
     })
     // a=1 required: MRT packs vec4; a=0 under material blending can zero RGB.
+    // .r is view distance for both clouds and the scene. Cloud hits are a ray
+    // distance until here; the world-position reprojection above still uses
+    // that ray distance. Closest-depth selection reads .r, so a cloud and the
+    // surface in front of it now compare in one space.
     const velocity = screenUV.sub(prevUv)
-    const depthVelocity = vec4(frontDepth, velocity, 1)
+    const viewCos = max(rayDirection.dot(cameraDirection), float(1e-4))
+    const storedDepth = hitClouds
+      .greaterThan(0)
+      .select(frontDepth.mul(viewCos), frontDepth)
+    const depthVelocity = vec4(storedDepth, velocity, 1)
     return marchResultStruct(outputColor, frontDepth, depthVelocity)
   })() as MarchResultNode
 }

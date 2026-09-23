@@ -48,6 +48,10 @@ export interface CloudShadowQuality {
 
 export interface CloudQualitySettings {
   resolutionScale: number
+  /**
+   * Quarter-res Bayer upscale. The resolve blend and confidence defaults live
+   * on CloudsResolveNode and are shared by every preset.
+   */
   temporalUpscale: boolean
   shapeDetail: boolean
   turbulence: boolean

@@ -227,6 +227,12 @@ export class CloudsNode extends TempNode {
       this.temporalHistoryEnabled = facade.temporalHistoryEnabled
     }
     if (facade.varianceGamma != null) this.varianceGamma = facade.varianceGamma
+    if (facade.varianceGammaStatic != null) {
+      this.varianceGammaStatic = facade.varianceGammaStatic
+    }
+    if (facade.depthRejectTolerance != null) {
+      this.depthRejectTolerance = facade.depthRejectTolerance
+    }
     if (facade.secondaryIterationCount != null) {
       this.secondaryIterationCount = facade.secondaryIterationCount
     }
@@ -320,6 +326,7 @@ export class CloudsNode extends TempNode {
     }
   }
 
+  /** Full-res TAA fresh weight. Also sets Nmax = 1 / alpha on that path. */
   get temporalAlpha(): number {
     return this.resolveNode.temporalAlpha.value
   }
@@ -345,6 +352,24 @@ export class CloudsNode extends TempNode {
 
   set varianceGamma(value: number) {
     this.resolveNode.varianceGamma.value = value
+  }
+
+  /** Extra still-pixel widening of {@link varianceGamma}. Default 2 (box gamma 4). */
+  get varianceGammaStatic(): number {
+    return this.resolveNode.varianceGammaStatic.value
+  }
+
+  set varianceGammaStatic(value: number) {
+    this.resolveNode.varianceGammaStatic.value = value
+  }
+
+  /** Depth-reject ratio slack. 1 accepts a 2× neighborhood error. */
+  get depthRejectTolerance(): number {
+    return this.resolveNode.depthRejectTolerance.value
+  }
+
+  set depthRejectTolerance(value: number) {
+    this.resolveNode.depthRejectTolerance.value = value
   }
 
   get shapeDetailEnabled(): boolean {
@@ -757,6 +782,7 @@ export class CloudsNode extends TempNode {
         },
         resolve: () => {
           this.resolveNode.setSize(this.outputSize.x, this.outputSize.y)
+          this.resolveNode.cameraFar.value = this.marchNode.march.cameraFar.value
           this.resolveNode.render(frame)
           this.marchNode.commitReprojection(frame)
         }
@@ -782,6 +808,7 @@ export class CloudsNode extends TempNode {
     return setupCloudsDebugOutput(this._debugOutput, {
       marchNode: this.marchNode,
       shadowNode: this.shadowNode,
+      resolveNode: this.resolveNode,
       textureNode: this.textureNode
     }) as ThreeNode
   }

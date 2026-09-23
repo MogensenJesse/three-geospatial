@@ -1,9 +1,10 @@
 // src/webgpu/cloudsDebug.ts
 
-import { Fn, screenUV, vec4 } from 'three/tsl'
+import { float, Fn, max, mix, screenUV, vec4 } from 'three/tsl'
 import type { TextureNode } from 'three/webgpu'
 
 import type { CloudsMarchNode } from './CloudsMarchNode'
+import type { CloudsResolveNode } from './CloudsResolveNode'
 import type { CloudsMarchParameters } from './march'
 import { ShadowDebugNode } from './ShadowDebugNode'
 import type { ShadowMarchNode } from './ShadowMarchNode'
@@ -13,6 +14,7 @@ export type CloudsDebugOutput =
   | 'none'
   | 'clouds'
   | 'velocity'
+  | 'history-confidence'
   | 'shadow-cascade-0'
   | 'shadow-cascade-1'
   | 'shadow-cascade-2'
@@ -72,6 +74,7 @@ export function applyDebugMarchMode(
 export interface CloudsDebugSetupHost {
   marchNode: CloudsMarchNode
   shadowNode: ShadowMarchNode
+  resolveNode: CloudsResolveNode
   textureNode: TextureNode
 }
 
@@ -94,6 +97,24 @@ export function setupCloudsDebugOutput(
           v.b.mul(20).add(0.5).clamp(0, 1),
           1
         )
+      })()
+    }
+    case 'history-confidence': {
+      const metaTex = host.resolveNode.historyConfidenceNode
+      const resolve = host.resolveNode
+      return Fn(() => {
+        const meta = metaTex.sample(screenUV)
+        const blend = mix(
+          resolve.temporalAlpha,
+          resolve.temporalUpscaleAlpha,
+          resolve.temporalUpscaleNode
+        )
+        const confidence = meta.r
+          .div(max(blend, float(1e-4)).reciprocal())
+          .clamp(0, 1)
+        // Green = N / Nmax. Red = still ramping (N < 1). Blue = depth / far.
+        const ramping = meta.r.lessThan(1).select(float(1), float(0))
+        return vec4(ramping, confidence, meta.g.clamp(0, 1), 1)
       })()
     }
     case 'shadow-cascade-0':

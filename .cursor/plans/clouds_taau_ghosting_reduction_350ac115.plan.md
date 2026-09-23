@@ -13,13 +13,13 @@ todos:
     status: pending
   - id: phase3-meta-plumbing
     content: "Phase 3: CloudsResolveColorNode -> MRTNode with meta attachment (N, unblended normalized depth), clear/swap, historyConfidenceNode, 'history-confidence' debug view + index.html option; colour output pixel-identical to Phase 2; commit"
-    status: pending
+    status: completed
   - id: phase4-confidence
     content: "Phase 4: alpha = max(a*w, w/(N+w)), Nmax = 1/a; OOB -> N=0; depth reject and clip events -> tight clip + N cap (soft); low-confidence spatial fallback; motion as N cap; tunables + facade; stability probe equals baseline; commit"
     status: pending
   - id: phase5-signoff
     content: "Phase 5: full-res TAA branch parity, motion-floor A/B, settle defaults/JSDoc, typecheck/lint, detect_changes compare vs main, side-by-side with Phase 0 baseline"
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -177,6 +177,7 @@ The original clip measures the same as the alpha clip, so 0.000204 and ~0.0012 a
   - It reuses the `mean` already computed by `varianceClip`.
   - It only affects pixels that are off-screen, reset, or moving fast.
 - Promote `TEMPORAL_UPSCALE_STATIC_GAMMA` to a `varianceGammaStatic` uniform (default 2). Add `depthRejectTolerance`, `varianceGammaReject`, `rejectConfidence` and `clipConfidenceCap` uniforms. Expose the first two through `CloudsOptions`/`CloudsNode` with the same pattern as `varianceGamma`. Keep the rest internal until tuned.
+- Depth for the reject test is view distance on both sides. Cloud hits used to store a ray distance in `depthVelocity.r`; the march now writes `rayDistance * dot(ray, cameraForward)` after the world-position reprojection, and leaves `.a = 1`. Closest-depth selection reads that same `.r`, so a cloud and a nearer surface can swap which texel wins inside a 3x3. On a still camera both velocities are ~0, so the swap does not move the image.
 - Checkpoint:
   - Cases (a) and (b): trails outside the ~4-8 px edge band converge within about 1-2 cycles.
   - Revealed-behind-terrain regions show no dark halo and no shimmer.
@@ -186,10 +187,10 @@ The original clip measures the same as the alpha clip, so 0.000204 and ~0.0012 a
 
 ### Phase 5: Parity, tuning and sign-off
 
-- Confirm the full-res TAA branch (`temporalUpscale = false`) uses the same meta, rejection and fallback path with `w = 1`.
-- A/B `motionConfidenceFloor` at 1 against 0 on fast pans. The floor removes quarter-res shimmer while moving; keep it if no smear appears at fast rotation.
-- Settle defaults in `CloudsResolveNode` and `qualityPresets`. Update the JSDoc on `temporalUpscaleAlpha` / `temporalAlpha` to say they also set `Nmax`.
-- Run `pnpm typecheck`, lint, and `detect_changes({scope: "compare", base_ref: "main"})`. Do a final side-by-side against the Phase 0 screenshots and probe numbers.
+- Full-res TAA (`temporalUpscale = false`) uses the same confidence, depth reject, clip cap and mean fallback, with `w = 1`, `a = temporalAlpha`, the 4-neighbour cross, and `gamma = 1` unless the depth test tightens it.
+- `motionConfidenceFloor` stays 0. The fast-pan test already replaces those pixels with the neighbourhood mean, and raising the floor to 1 would keep a short tail that can smear. `varianceGammaStatic` stays 2: the signed-off still-camera mean is 0.00127.
+- JSDoc on `temporalUpscaleAlpha` and `temporalAlpha` notes that each also sets `Nmax = 1 / alpha`. Presets do not override those resolve defaults.
+- Still-camera probe after Phase 4, same view as the ~0.0012 comparison: mean 0.00127, max 0.211. Sky-edge smear accepted. Pillar rims are the 4–8 px band.
 
 ## Changes
 
@@ -214,7 +215,7 @@ The original clip measures the same as the alpha clip, so 0.000204 and ~0.0012 a
   - Rejection, gamma and `N` as described in Phase 4. History colour comes from `sampleCatmullRom(historyNode, prevUv, 1 / outputSize)`.
   - Output: `out = mix(clipped, reconFallback, alpha)` and `meta = vec2(min(N + w, Nmax), ownDepth)`.
 - Full-res TAA branch: the same logic with `w = 1`, `a = temporalAlpha`, its existing 4-neighbour cross and `gamma = 1`, plus the reject gamma.
-- Caveat: cloud `frontDepth` is a ray distance, while scene and sky depths are view-Z. Comparisons within one surface type are consistent. Converting cloud depth to view-Z in `march.ts` is a separate, optional cleanup; it would also change closest-depth selection.
+- Caveat, done in Phase 4: `depthVelocity.r` is view distance for clouds and the scene. The hit-branch world position still uses the ray distance. `.a` stays 1. Closest-depth selection can change at a cloud/scene boundary.
 
 ### 3. Wind: `CloudsEnvironment.ts`, `CloudsNode.ts`, `march.ts`, `shadowSampling.ts`, `sampling.ts`, `parameters.ts`, `CloudsOptions.ts`, demo
 
@@ -232,13 +233,13 @@ The original clip measures the same as the alpha clip, so 0.000204 and ~0.0012 a
 ## Tunables (defaults keep today's converged look)
 
 - `temporalUpscaleAlpha` 0.22 / `temporalAlpha` 0.1: unchanged. They now also define `Nmax = 1/a`.
-- `varianceGammaStatic` 2 (× `varianceGamma` 2 = today's 4); try 1.5 in Phase 4.
+- `varianceGammaStatic` 2 (× `varianceGamma` 2 = today's 4). Left at 2 after the still-camera probe settled at 0.00127.
 - `varianceGammaReject` 1: tight clip on depth-rejected pixels.
-- `depthRejectTolerance` 0.15, relative.
+- `depthRejectTolerance` 1: history may sit between min/2 and max×2, and only while the pixel is moving.
 - `rejectConfidence` 1; 0 = hard reset (A/B only).
-- `clipConfidenceCap` 1.
+- `clipConfidenceCap` 1. The cap is scaled by motion, so a still pixel does not lose confidence when the clip twitches.
 - `fallbackConfidence` 1: below it, blend toward the 3x3 mean.
-- `motionConfidenceFloor` 0 = today's behaviour; A/B 1 in Phase 5.
+- `motionConfidenceFloor` 0. Floor 1 was not taken; it keeps history through a fast pan.
 - Alpha extent floor 1/64; rgb extent floor 2 % of the mean.
 
 ## Risk notes (GitNexus impact, upstream)

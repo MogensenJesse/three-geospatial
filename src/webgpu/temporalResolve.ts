@@ -1,7 +1,7 @@
 // @ts-nocheck — Three r186 TSL typings are incomplete for this module; revisit.
 // src/webgpu/temporalResolve.ts
 
-import { float, max, min, sqrt, vec4 } from 'three/tsl'
+import { float, max, min, sqrt, vec3, vec4 } from 'three/tsl'
 
 import type { Node } from './internal/node'
 
@@ -122,11 +122,24 @@ export function varianceClipEx(options: VarianceClipOptions): VarianceClipResult
   ).toConst()
   const deltaA = rgbClipped.a.sub(centerA).toConst()
   const unitA = deltaA.abs().div(extentA).toConst()
+  // Confidence only. The colour clip above stays on the original tight box.
+  // A 2% floor keeps low-res noise from capping N across a cloud body.
+  // Read the mean through a new vec3; swizzle methods can write back into it.
+  const rgbCenter = maxColor.rgb.add(minColor.rgb).mul(0.5).toConst()
+  const rgbHalf = maxColor.rgb.sub(minColor.rgb).mul(0.5).toConst()
+  const rgbExtent = max(
+    rgbHalf,
+    vec3(mean.r, mean.g, mean.b).mul(0.02)
+  )
+    .add(1e-7)
+    .toConst()
+  const rgbUnit = history.rgb.sub(rgbCenter).div(rgbExtent).abs().toConst()
+  const rgbClip = max(rgbUnit.x, max(rgbUnit.y, rgbUnit.z)).sub(1).max(0)
   return {
     color: unitA
       .greaterThan(1)
       .select(vec4(rgbClipped.rgb, centerA.add(deltaA.div(unitA))), rgbClipped),
-    clipAmount: unitA.sub(1).max(0),
+    clipAmount: max(rgbClip, unitA.sub(1).max(0)),
     mean
   }
 }
