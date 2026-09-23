@@ -184,6 +184,7 @@ class CloudsResolveColorNode extends MRTNode {
         ownDepth: Node<'float'>
         depthReject: Node<'bool'>
         histMeta: Node<'vec4'>
+        highContrast: Node<'bool'>
       }): void => {
         const {
           recon,
@@ -195,7 +196,8 @@ class CloudsResolveColorNode extends MRTNode {
           motion,
           ownDepth,
           depthReject,
-          histMeta
+          histMeta,
+          highContrast
         } = options
         const nMax = max(freshAlpha, float(1e-4)).reciprocal()
         const histN = inside
@@ -210,7 +212,7 @@ class CloudsResolveColorNode extends MRTNode {
           mix(nMax, owner.motionConfidenceFloor, motion)
         )
         const reconFallback = mix(
-          mean,
+          highContrast.select(recon, mean),
           recon,
           N.div(max(owner.fallbackConfidence, float(1e-4))).saturate()
         )
@@ -291,7 +293,8 @@ class CloudsResolveColorNode extends MRTNode {
           motion: historyState.motion,
           ownDepth: historyState.ownDepth,
           depthReject: historyState.depthReject,
-          histMeta: historyState.histMeta
+          histMeta: historyState.histMeta,
+          highContrast: clip.highContrast
         })
       }).Else(() => {
         // Full-res TAA. Same confidence, depth reject and mean fallback as the
@@ -336,7 +339,8 @@ class CloudsResolveColorNode extends MRTNode {
           motion: historyState.motion,
           ownDepth: historyState.ownDepth,
           depthReject: historyState.depthReject,
-          histMeta: historyState.histMeta
+          histMeta: historyState.histMeta,
+          highContrast: clip.highContrast
         })
       })
 

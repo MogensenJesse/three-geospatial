@@ -55,10 +55,17 @@ export interface VarianceClipOptions {
   gamma: FloatNode
 }
 
+/** Rec.709. Matches the stability probe so contrast is judged in the same units. */
+function sampleLuminance(color: Vec4): FloatNode {
+  return color.r.mul(0.2126).add(color.g.mul(0.7152)).add(color.b.mul(0.0722))
+}
+
 interface NeighbourhoodBox {
   mean: Vec4
   minColor: Vec4
   maxColor: Vec4
+  lumMin: FloatNode
+  lumMax: FloatNode
 }
 
 /** Mean and gamma-scaled variance box of `current` plus `offsets`. */
@@ -71,10 +78,15 @@ function neighbourhoodBox(options: {
   const { offsets, sampleNeighbor, current, gamma } = options
   const moment1 = current.toVar()
   const moment2 = current.pow2().toVar()
+  const lumMin = sampleLuminance(current).toVar()
+  const lumMax = sampleLuminance(current).toVar()
   for (const [x, y] of offsets) {
     const neighbor = sampleNeighbor(x, y).toConst()
     moment1.addAssign(neighbor)
     moment2.addAssign(neighbor.pow2())
+    const lum = sampleLuminance(neighbor)
+    lumMin.assign(min(lumMin, lum))
+    lumMax.assign(max(lumMax, lum))
   }
   const sampleCount = offsets.length + 1
   const mean = moment1.div(sampleCount).toConst()
@@ -84,7 +96,9 @@ function neighbourhoodBox(options: {
   return {
     mean,
     minColor: mean.sub(deviation).toConst(),
-    maxColor: mean.add(deviation).toConst()
+    maxColor: mean.add(deviation).toConst(),
+    lumMin,
+    lumMax
   }
 }
 
@@ -103,9 +117,14 @@ export function varianceClip(options: VarianceClipOptions): Vec4 {
   )
 }
 
+/** Brightest sample more than this many times the dimmest: the mean is not a colour. */
+const HIGH_CONTRAST_LUMINANCE_RATIO = 4
+
 export interface CloudVarianceClipResult {
   color: Vec4
   mean: Vec4
+  /** Neighbourhood mixes a highlight with a much dimmer sample. */
+  highContrast: Node<'bool'>
 }
 
 /**
@@ -121,7 +140,7 @@ export function cloudVarianceClip(options: {
   gamma: FloatNode
   alphaExtentFloor: number
 }): CloudVarianceClipResult {
-  const { mean, minColor, maxColor } = neighbourhoodBox(options)
+  const { mean, minColor, maxColor, lumMin, lumMax } = neighbourhoodBox(options)
   const rgbClipped = clipAABB(
     mean.clamp(minColor, maxColor),
     options.history,
@@ -139,7 +158,8 @@ export function cloudVarianceClip(options: {
     color: unitA
       .greaterThan(1)
       .select(vec4(rgbClipped.rgb, centerA.add(deltaA.div(unitA))), rgbClipped),
-    mean
+    mean,
+    highContrast: lumMax.greaterThan(lumMin.mul(HIGH_CONTRAST_LUMINANCE_RATIO))
   }
 }
 
