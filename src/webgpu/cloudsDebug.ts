@@ -71,6 +71,15 @@ export function applyDebugMarchMode(
   }
 }
 
+/** These views change the march colour, so history from the previous view is stale. */
+export function debugOutputChangesMarch(debugOutput: CloudsDebugOutput): boolean {
+  return (
+    debugOutput === 'optical-depth-local' ||
+    debugOutput === 'optical-depth-bsm' ||
+    debugOutput === 'no-shadow'
+  )
+}
+
 export interface CloudsDebugSetupHost {
   marchNode: CloudsMarchNode
   shadowNode: ShadowMarchNode

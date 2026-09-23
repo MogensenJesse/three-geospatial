@@ -39,6 +39,7 @@ export const cloudsFacadeFields = {
   resolutionScale: opt<number>(),
   temporalUpscale: opt<boolean>(),
   temporalAlpha: opt<number>(),
+  temporalUpscaleAlpha: opt<number>(),
   temporalHistoryEnabled: opt<boolean>(),
   varianceGamma: opt<number>(),
   varianceGammaStatic: opt<number>(),

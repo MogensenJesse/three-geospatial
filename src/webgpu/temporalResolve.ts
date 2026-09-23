@@ -145,25 +145,26 @@ export function varianceClipEx(options: VarianceClipOptions): VarianceClipResult
 }
 
 /**
- * Closest fragment plus the depth range of the same neighbourhood. `minDepth`
- * and `maxDepth` cover the sampled texels only, not `initial` (clouds pass a
- * sentinel). Closest selection matches {@link closestDepthVelocity}.
+ * Closest fragment plus the depth range of `center` and `offsets`. `offsets`
+ * must not repeat the center. Ties keep `center`, so a sky neighbourhood whose
+ * depth is `cameraFar` (above the old 1e7 sentinel) still has a real velocity.
+ * Closest selection otherwise matches {@link closestDepthVelocity}.
  */
 export function closestDepthVelocityRange(options: {
   offsets: readonly TexelOffset[]
   sample: (x: number, y: number) => Vec4
-  initial: Vec4
-}): { closest: Vec4; minDepth: FloatNode; maxDepth: FloatNode } {
-  const closest = options.initial.toVar()
-  const minDepth = float(1e7).toVar()
-  const maxDepth = float(0).toVar()
+  center: Vec4
+}): { closest: Vec4; center: Vec4; minDepth: FloatNode; maxDepth: FloatNode } {
+  const closest = options.center.toVar()
+  const minDepth = options.center.r.toVar()
+  const maxDepth = options.center.r.toVar()
   for (const [x, y] of options.offsets) {
     const neighbor = options.sample(x, y)
     closest.assign(neighbor.r.lessThan(closest.r).select(neighbor, closest))
     minDepth.assign(min(minDepth, neighbor.r))
     maxDepth.assign(max(maxDepth, neighbor.r))
   }
-  return { closest, minDepth, maxDepth }
+  return { closest, center: options.center, minDepth, maxDepth }
 }
 
 /**

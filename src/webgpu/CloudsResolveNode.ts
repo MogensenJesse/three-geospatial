@@ -55,12 +55,13 @@ import {
 
 const { resetRendererState, restoreRendererState } = RendererUtils
 
+// Neighbours only. The center texel is loaded once and passed in, so a block
+// that sits off the velocity target still reads a clamped texel.
 const closestOffsets: Array<readonly [number, number]> = [
   [-1, -1],
   [-1, 0],
   [-1, 1],
   [0, -1],
-  [0, 0],
   [0, 1],
   [1, -1],
   [1, 0],
@@ -108,20 +109,22 @@ function sampleClosestCloudVelocity(
   coord: Node<'ivec2'>
 ): {
   closest: Node<'vec4'>
+  center: Node<'vec4'>
   minDepth: Node<'float'>
   maxDepth: Node<'float'>
 } {
   const maxCoord = ivec2(textureSize(velocityNode)).sub(1).toConst()
+  const loadAt = (x: number, y: number): Node<'vec4'> => {
+    const neighborCoord = coord
+      .add(ivec2(x, y))
+      .clamp(ivec2(0), maxCoord)
+      .toConst()
+    return velocityNode.load(neighborCoord)
+  }
   return closestDepthVelocityRange({
     offsets: closestOffsets,
-    initial: vec4(1e7, 0, 0, 0),
-    sample: (x, y) => {
-      const neighborCoord = coord
-        .add(ivec2(x, y))
-        .clamp(ivec2(0), maxCoord)
-        .toConst()
-      return velocityNode.load(neighborCoord)
-    }
+    center: loadAt(0, 0),
+    sample: loadAt
   })
 }
 
@@ -204,7 +207,9 @@ class CloudsResolveColorNode extends MRTNode {
         )
         const alpha = max(
           freshAlpha.mul(weight),
-          weight.div(max(N.add(weight), float(1e-4)))
+          // 1e-4 left the farthest Bayer pixel (w ~ 1e-6) on stale history
+          // during a hard motion cut. 1e-8 still ignores a true zero weight.
+          weight.div(max(N.add(weight), float(1e-8)))
         )
         const temporal = mix(clipped, reconFallback, alpha)
         const withHistory = inside.select(temporal, reconFallback)
@@ -244,9 +249,7 @@ class CloudsResolveColorNode extends MRTNode {
         const historyReproj = texture(owner.historyNode, prevUv, int(0))
         const depthMin = neighborhood.minDepth.div(owner.cameraFar)
         const depthMax = neighborhood.maxDepth.div(owner.cameraFar)
-        const ownDepth = owner.velocityNode
-          .load(nearestBlock)
-          .r.div(owner.cameraFar)
+        const ownDepth = neighborhood.center.r.div(owner.cameraFar)
         const histMeta = texture(owner.historyMetaNode, prevUv, int(0))
         // 3x3 around the reconstruction sample (+ center = 9). Still pixels
         // widen the box; motion falls back to varianceGamma. A moving depth
@@ -307,7 +310,7 @@ class CloudsResolveColorNode extends MRTNode {
         const history = texture(owner.historyNode, prevUv, int(0))
         const depthMin = neighborhood.minDepth.div(owner.cameraFar)
         const depthMax = neighborhood.maxDepth.div(owner.cameraFar)
-        const ownDepth = owner.velocityNode.load(coord).r.div(owner.cameraFar)
+        const ownDepth = neighborhood.center.r.div(owner.cameraFar)
         const histMeta = texture(owner.historyMetaNode, prevUv, int(0))
         const motion = motionFactor(closest.gb)
         const depthReject = depthIsStale(histMeta.g, depthMin, depthMax, motion)
@@ -367,20 +370,21 @@ export class CloudsResolveNode extends TempNode {
     'cloudsResolveJitterOffset'
   )
   /**
-   * Full-res TAA blend toward the current sample. Also sets Nmax = 1 / alpha,
-   * so a settled pixel keeps this blend.
+   * Full-res TAA blend toward the current sample. Also sets Nmax = 1 / alpha
+   * on that path. Unused while temporal upscaling is on.
    */
   readonly temporalAlpha = uniform(0.1).setName('cloudsTemporalAlpha')
   /**
-   * TAAU blend toward the fresh reconstruction, scaled by distance to this
-   * frame's Bayer sample. 1 replaces the phase pixel outright. Also sets
-   * Nmax = 1 / alpha, so a settled pixel keeps this blend.
+   * Upscale-path blend toward the fresh reconstruction, scaled by distance to
+   * this frame's Bayer sample. 1 replaces the phase pixel outright. Also sets
+   * Nmax = 1 / alpha on that path. Unused while temporal upscaling is off.
    */
   readonly temporalUpscaleAlpha = uniform(0.22).setName(
     'cloudsTemporalUpscaleAlpha'
   )
+  /** Upscale-path neighbourhood gamma. Full-res TAA uses 1. */
   readonly varianceGamma = uniform(2).setName('cloudsVarianceGamma')
-  /** Still TAAU pixels use varianceGamma * this. Default 2, so the box gamma stays 4. */
+  /** Still upscale pixels use varianceGamma * this. Default 2, so the box gamma stays 4. */
   readonly varianceGammaStatic = uniform(TEMPORAL_UPSCALE_STATIC_GAMMA).setName(
     'cloudsVarianceGammaStatic'
   )

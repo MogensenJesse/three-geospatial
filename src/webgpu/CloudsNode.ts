@@ -35,6 +35,7 @@ import {
   type CloudsDebugOutput,
   type CloudsPassTiming,
   createCloudsPassTiming,
+  debugOutputChangesMarch,
   measureCloudsPassTiming,
   setupCloudsDebugOutput
 } from './cloudsDebug'
@@ -223,6 +224,9 @@ export class CloudsNode extends TempNode {
       this.temporalUpscale = facade.temporalUpscale
     }
     if (facade.temporalAlpha != null) this.temporalAlpha = facade.temporalAlpha
+    if (facade.temporalUpscaleAlpha != null) {
+      this.temporalUpscaleAlpha = facade.temporalUpscaleAlpha
+    }
     if (facade.temporalHistoryEnabled != null) {
       this.temporalHistoryEnabled = facade.temporalHistoryEnabled
     }
@@ -326,13 +330,22 @@ export class CloudsNode extends TempNode {
     }
   }
 
-  /** Full-res TAA fresh weight. Also sets Nmax = 1 / alpha on that path. */
+  /** Full-res TAA fresh weight. Also sets Nmax = 1 / alpha. Unused while upscaling is on. */
   get temporalAlpha(): number {
     return this.resolveNode.temporalAlpha.value
   }
 
   set temporalAlpha(value: number) {
     this.resolveNode.temporalAlpha.value = value
+  }
+
+  /** Upscale-path fresh weight. Also sets Nmax = 1 / alpha. Unused while upscaling is off. */
+  get temporalUpscaleAlpha(): number {
+    return this.resolveNode.temporalUpscaleAlpha.value
+  }
+
+  set temporalUpscaleAlpha(value: number) {
+    this.resolveNode.temporalUpscaleAlpha.value = value
   }
 
   get temporalHistoryEnabled(): boolean {
@@ -346,6 +359,7 @@ export class CloudsNode extends TempNode {
     }
   }
 
+  /** Upscale-path neighbourhood gamma. Full-res TAA uses 1. */
   get varianceGamma(): number {
     return this.resolveNode.varianceGamma.value
   }
@@ -354,7 +368,7 @@ export class CloudsNode extends TempNode {
     this.resolveNode.varianceGamma.value = value
   }
 
-  /** Extra still-pixel widening of {@link varianceGamma}. Default 2 (box gamma 4). */
+  /** Extra still-pixel widening of {@link varianceGamma} on the upscale path. Default 2 (box gamma 4). */
   get varianceGammaStatic(): number {
     return this.resolveNode.varianceGammaStatic.value
   }
@@ -686,9 +700,12 @@ export class CloudsNode extends TempNode {
 
   set debugOutput(value: CloudsDebugOutput) {
     if (value === this._debugOutput) return
+    const marchOutputChanged =
+      debugOutputChangesMarch(this._debugOutput) ||
+      debugOutputChangesMarch(value)
     this._debugOutput = value
     this.applyDebugMarchMode()
-    this.resetTemporalHistory()
+    if (marchOutputChanged) this.resetTemporalHistory()
     // setup() return value changed — force the pipeline to rebuild this node.
     ;(this as { needsUpdate?: boolean }).needsUpdate = true
   }
